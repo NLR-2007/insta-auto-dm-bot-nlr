@@ -1,0 +1,4 @@
+venv\Scripts\python -m backend.run_bot
+.\run_backend.bat
+
+cloudflared tunnel --url http://localhost:8000

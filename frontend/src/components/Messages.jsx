@@ -104,12 +104,12 @@ export default function Messages() {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "28px" }}>
+    <div className="content-grid cols-2-left">
       {/* Templates List Column */}
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         <div className="glass-card">
           <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "16px" }}>
-            <MessageSquare size={20} style={{ color: "var(--accent-pink)" }} />
+            <MessageSquare size={20} style={{ color: "var(--accent)" }} />
             <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Outreach Templates</h3>
           </div>
           
@@ -126,18 +126,18 @@ export default function Messages() {
                   style={{ 
                     padding: "20px", 
                     background: "rgba(255, 255, 255, 0.015)",
-                    border: tpl.is_active ? "1px solid rgba(124, 77, 255, 0.25)" : "1px solid var(--border-color)",
+                    border: tpl.is_active ? "1px solid rgba(249, 115, 22, 0.3)" : "1px solid var(--border-color)",
                     display: "flex", 
                     flexDirection: "column", 
                     gap: "14px",
-                    boxShadow: tpl.is_active ? "0 4px 20px rgba(124, 77, 255, 0.08)" : "none"
+                    boxShadow: tpl.is_active ? "0 4px 20px rgba(249, 115, 22, 0.08)" : "none"
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>{tpl.name}</h4>
                       {tpl.is_active && (
-                        <span style={{ fontSize: "11px", color: "var(--accent-purple)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        <span style={{ fontSize: "11px", color: "var(--accent)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           ● Active Target Template
                         </span>
                       )}
@@ -161,16 +161,16 @@ export default function Messages() {
                     </div>
                   </div>
                   
-                  <div 
-                    style={{ 
-                      background: "rgba(0,0,0,0.25)", 
-                      padding: "16px", 
-                      borderRadius: "10px", 
-                      color: "var(--text-secondary)", 
+                  <div
+                    style={{
+                      background: "var(--bg-secondary)",
+                      padding: "16px",
+                      borderRadius: "10px",
+                      color: "var(--text-secondary)",
                       fontSize: "13.5px",
                       fontFamily: "monospace",
                       whiteSpace: "pre-wrap",
-                      border: "1px solid rgba(255,255,255,0.02)",
+                      border: "1px solid var(--border-color)",
                       lineHeight: "1.5"
                     }}
                   >
@@ -189,7 +189,7 @@ export default function Messages() {
         {/* Modern Interactive Editor */}
         <div className="glass-card">
           <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "20px" }}>
-            <Sparkles size={20} style={{ color: "var(--accent-purple)" }} />
+            <Sparkles size={20} style={{ color: "var(--accent)" }} />
             <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Create Template</h3>
           </div>
           
@@ -276,15 +276,15 @@ export default function Messages() {
 
         {/* Live Preview Console */}
         <div 
-          className="glass-card" 
-          style={{ 
-            background: "rgba(124, 77, 255, 0.02)",
-            border: "1px dashed rgba(124, 77, 255, 0.2)"
+          className="glass-card"
+          style={{
+            background: "var(--accent-light)",
+            border: "1px dashed rgba(249, 115, 22, 0.3)"
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <Eye size={16} style={{ color: "var(--accent-purple)" }} />
+              <Eye size={16} style={{ color: "var(--accent)" }} />
               <h4 style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)" }}>
                 Live Message Preview
               </h4>
@@ -300,12 +300,12 @@ export default function Messages() {
             </button>
           </div>
           
-          <div 
-            style={{ 
-              background: "#05070a", 
-              padding: "16px", 
-              borderRadius: "12px", 
-              color: content.trim() ? "var(--text-primary)" : "var(--text-muted)", 
+          <div
+            style={{
+              background: "var(--bg-primary)",
+              padding: "16px",
+              borderRadius: "12px",
+              color: content.trim() ? "var(--text-primary)" : "var(--text-muted)",
               fontSize: "13.5px",
               fontFamily: "sans-serif",
               border: "1px solid var(--border-color)",

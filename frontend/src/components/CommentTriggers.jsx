@@ -92,12 +92,12 @@ export default function CommentTriggers() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Configuration Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px" }}>
+      <div className="content-grid cols-2-wide">
         
         {/* Setup Form */}
         <div className="glass-card">
           <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "16px" }}>
-            <Sparkles size={20} style={{ color: "var(--accent-purple)" }} />
+            <Sparkles size={20} style={{ color: "var(--accent)" }} />
             <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Configure Comment Trigger</h3>
           </div>
           
@@ -167,7 +167,7 @@ export default function CommentTriggers() {
         <div className="glass-card" style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <h4 style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)", display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
-              <MessageCircle size={18} style={{ color: "var(--accent-blue)" }} /> Comment-to-DM Rules
+              <MessageCircle size={18} style={{ color: "var(--accent)" }} /> Comment-to-DM Rules
             </h4>
             <div style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: "1.6", display: "flex", flexDirection: "column", gap: "12px" }}>
               <p>
@@ -210,13 +210,13 @@ export default function CommentTriggers() {
                         href={item.post_url} 
                         target="_blank" 
                         rel="noreferrer"
-                        style={{ color: "var(--accent-blue)", textDecoration: "underline", display: "inline-flex", gap: "4px", alignItems: "center" }}
+                        style={{ color: "var(--accent)", textDecoration: "underline", display: "inline-flex", gap: "4px", alignItems: "center" }}
                       >
                         <Link size={12} /> View Post
                       </a>
                     </td>
                     <td>
-                      <span style={{ fontFamily: "monospace", fontSize: "14px", background: "rgba(255,255,255,0.05)", padding: "4px 8px", borderRadius: "4px" }}>
+                      <span style={{ fontFamily: "monospace", fontSize: "14px", background: "var(--bg-tertiary)", padding: "4px 8px", borderRadius: "4px" }}>
                         {item.trigger_keyword}
                       </span>
                     </td>
@@ -274,7 +274,7 @@ export default function CommentTriggers() {
                         href={`https://instagram.com/${item.username}`} 
                         target="_blank" 
                         rel="noreferrer"
-                        style={{ color: "var(--accent-blue)", fontWeight: "500" }}
+                        style={{ color: "var(--accent)", fontWeight: "500" }}
                       >
                         @{item.username}
                       </a>
@@ -283,7 +283,7 @@ export default function CommentTriggers() {
                       "{item.comment_text}"
                     </td>
                     <td>
-                      <span style={{ background: "rgba(255,255,255,0.05)", padding: "3px 6px", borderRadius: "4px", fontSize: "12px", fontFamily: "monospace" }}>
+                      <span style={{ background: "var(--bg-tertiary)", padding: "3px 6px", borderRadius: "4px", fontSize: "12px", fontFamily: "monospace" }}>
                         {item.trigger_keyword}
                       </span>
                     </td>

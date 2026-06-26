@@ -75,7 +75,7 @@ export default function Accounts() {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px" }}>
+    <div className="content-grid cols-2-wide">
       {/* Account List */}
       <div className="glass-card">
         <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "16px" }}>Linked Accounts</h3>
@@ -96,7 +96,7 @@ export default function Accounts() {
                 className="glass-card" 
                 style={{ 
                   padding: "16px 20px", 
-                  background: "rgba(255,255,255,0.01)", 
+                  background: "var(--bg-secondary)", 
                   display: "flex", 
                   justifyContent: "space-between", 
                   alignItems: "center" 

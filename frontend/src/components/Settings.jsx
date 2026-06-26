@@ -58,7 +58,7 @@ export default function Settings() {
   };
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px" }}>
+    <div className="content-grid cols-2-wide">
       {/* Settings Form */}
       <div className="glass-card">
         <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "20px" }}>System Configuration</h3>
@@ -77,9 +77,7 @@ export default function Settings() {
                 required
               />
             </div>
-            <div className="form-group" style={{ opacity: 0.5, pointerEvents: "none" }}>
-              {/* Spacer */}
-            </div>
+            <div></div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>

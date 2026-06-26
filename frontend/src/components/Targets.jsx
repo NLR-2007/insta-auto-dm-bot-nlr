@@ -98,7 +98,7 @@ export default function Targets() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Upper upload/adding row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
+      <div className="content-grid cols-2">
         {/* Manual Add */}
         <div className="glass-card">
           <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "16px" }}>Add Single Target</h3>
@@ -210,7 +210,7 @@ export default function Targets() {
                         href={`https://instagram.com/${item.username}`} 
                         target="_blank" 
                         rel="noreferrer"
-                        style={{ color: "var(--accent-blue)", textDecoration: "underline", fontWeight: "500" }}
+                        style={{ color: "var(--accent)", textDecoration: "underline", fontWeight: "500" }}
                       >
                         @{item.username}
                       </a>

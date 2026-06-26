@@ -135,11 +135,11 @@ export default function Dashboard() {
 
       {/* Stats row */}
       <div className="stats-grid">
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--accent-purple)" }}>
+        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--accent)" }}>
           <div className="stat-label">Sent Today</div>
           <div className="stat-value">{status.sent_today}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--accent-blue)" }}>
+        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--info)" }}>
           <div className="stat-label">Queue Pending</div>
           <div className="stat-value">{status.pending_count}</div>
         </div>
@@ -154,7 +154,7 @@ export default function Dashboard() {
       </div>
 
       {/* Content Columns */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "24px" }}>
+      <div className="content-grid cols-2-wider">
         {/* Analytics Chart */}
         <div className="glass-card" style={{ height: "400px", display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "20px" }}>Campaign Analytics</h3>
@@ -163,11 +163,11 @@ export default function Dashboard() {
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--accent-purple)" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="var(--accent-purple)" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
                 <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
                 <YAxis stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
                 <Tooltip 
@@ -178,7 +178,7 @@ export default function Dashboard() {
                     color: "var(--text-primary)" 
                   }} 
                 />
-                <Area type="monotone" dataKey="Sent" stroke="var(--accent-purple)" fillOpacity={1} fill="url(#colorSent)" />
+                <Area type="monotone" dataKey="Sent" stroke="var(--accent)" fillOpacity={1} fill="url(#colorSent)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

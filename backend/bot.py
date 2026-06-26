@@ -86,28 +86,24 @@ class InstagramBot:
             self.playwright = None
             self.page = None
 
-    async def check_login_status(self) -> bool:
-        """Navigates to Instagram and checks if logged in by looking for dashboard indicators."""
+    async def check_login_status(self, navigate: bool = True) -> bool:
+        """Checks if logged in by looking for dashboard indicators. If navigate=True, navigates to Instagram home first."""
         if not self.page:
             return False
         
-        log_to_db("INFO", f"Checking Instagram login status for {self.username}...")
         try:
-            await self.page.goto("https://www.instagram.com/", wait_until="networkidle", timeout=45000)
-            await asyncio.sleep(5)
+            if navigate:
+                log_to_db("INFO", f"Navigating to check Instagram login status for {self.username}...")
+                await self.page.goto("https://www.instagram.com/", wait_until="networkidle", timeout=45000)
+                await asyncio.sleep(4)
             
-            # Check if login fields are present
-            login_form = await self.page.locator('input[name="username"]').is_visible()
-            if login_form:
-                log_to_db("WARNING", f"User {self.username} is NOT logged in (username input detected).")
-                return False
-                
             # Check if feed or navigation exists (e.g. search icon, direct message icon, or profile picture)
             logged_in_indicators = [
                 'svg[aria-label="Direct"]',
                 'svg[aria-label="Messenger"]',
                 'svg[aria-label="New post"]',
                 'svg[aria-label="Home"]',
+                'svg[aria-label="Search"]',
                 'a[href*="/direct/inbox/"]'
             ]
             
@@ -116,19 +112,17 @@ class InstagramBot:
                     log_to_db("INFO", f"User {self.username} is logged in successfully.")
                     return True
                     
-            # Double check URL
+            # Check if login form fields are visible
+            login_form = await self.page.locator('input[name="username"]').is_visible()
+            if login_form:
+                return False
+                
             current_url = self.page.url
             if "instagram.com/accounts/login" in current_url:
-                log_to_db("WARNING", f"User {self.username} redirected to login page.")
                 return False
                 
-            # If we don't see login form but don't see direct icons, wait a bit and inspect page content
-            body_text = await self.page.inner_text("body")
-            if "Log In" in body_text and "Sign Up" in body_text:
-                return False
-                
-            log_to_db("INFO", f"Assume logged in based on absence of login elements.")
-            return True
+            # If no logged in indicators are visible, strictly treat as not logged in
+            return False
         except Exception as e:
             log_to_db("ERROR", f"Error checking login status: {str(e)}")
             return False
@@ -142,22 +136,22 @@ class InstagramBot:
             await self.page.goto("https://www.instagram.com/accounts/login/", wait_until="load")
             log_to_db("INFO", "Please perform the login in the opened browser window. Do not close it until completed.")
             
-            # Wait for user to log in manually - we poll login state every 5 seconds
+            # Wait for user to log in manually - we poll login state every 3 seconds
             # Or run until browser window is closed
-            # Increased limit to 360 iterations (30 minutes) to give ample time for captchas/verification
+            # Increased limit to 360 iterations (18 minutes) to give ample time for captchas/verification
             for _ in range(360): 
                 if self.page.is_closed():
                     log_to_db("WARNING", "Login browser window closed by user.")
                     break
                 
-                # Check login state
-                is_logged = await self.check_login_status()
+                # Check login state WITHOUT navigating away (so user can type password/2FA undisturbed)
+                is_logged = await self.check_login_status(navigate=False)
                 if is_logged:
                     log_to_db("SUCCESS", f"Successfully logged into account {self.username}! Saving session...")
                     await asyncio.sleep(8) # Give it extra time to write session cookies to local storage
                     success = True
                     break
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
                 
         except Exception as e:
             log_to_db("ERROR", f"Manual login process failed: {str(e)}")

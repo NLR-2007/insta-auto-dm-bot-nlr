@@ -65,6 +65,31 @@ class Setting(Base):
     key = Column(String(100), primary_key=True)
     value = Column(String(255), nullable=False)
 
+class MonitoredPost(Base):
+    __tablename__ = "monitored_posts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_url = Column(String(500), nullable=False)
+    trigger_keyword = Column(String(100), nullable=False)
+    template_id = Column(Integer, ForeignKey("message_templates.id", ondelete="CASCADE"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    template = relationship("MessageTemplate")
+
+class ProcessedComment(Base):
+    __tablename__ = "processed_comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), index=True, nullable=False)
+    post_id = Column(Integer, ForeignKey("monitored_posts.id", ondelete="CASCADE"), nullable=False)
+    comment_text = Column(Text, nullable=True)
+    status = Column(String(50), default="sent") # sent, failed
+    processed_at = Column(DateTime, default=datetime.utcnow)
+    
+    post = relationship("MonitoredPost")
+
+
 # Dependency to get db session
 def get_db():
     db = SessionLocal()

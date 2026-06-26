@@ -7,7 +7,7 @@ from datetime import datetime, date
 import threading
 from playwright.async_api import async_playwright, Page, BrowserContext
 from sqlalchemy.orm import Session
-from backend.database import SessionLocal, Account, Target, MessageTemplate, BotLog, Setting, log_to_db
+from backend.database import SessionLocal, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, MonitoredPost, ProcessedComment
 from backend.config import settings
 
 # Global running state flag
@@ -271,6 +271,81 @@ class InstagramBot:
         except Exception as e:
             log_to_db("WARNING", f"Failed random activity: {e}")
 
+    async def scrape_post_comments(self, post_url: str, trigger_keyword: str) -> list:
+        """Navigates to post_url and extracts commenter usernames and comment texts."""
+        if not self.page:
+            raise Exception("Browser not initialized.")
+        
+        log_to_db("INFO", f"Checking comments on post: {post_url}")
+        comments_found = []
+        try:
+            await self.page.goto(post_url, wait_until="networkidle", timeout=30000)
+            await asyncio.sleep(random.uniform(4.0, 6.0))
+            
+            try:
+                # Scroll comment area if possible
+                comment_container = self.page.locator('div[style*="overflow-y: scroll"], ul[role="list"]')
+                if await comment_container.count() > 0:
+                    await comment_container.first.evaluate("el => el.scrollTop = el.scrollHeight")
+                    await asyncio.sleep(2.0)
+            except Exception:
+                pass
+                
+            # Scan elements for user profile links
+            anchors = self.page.locator('a[href^="/"]')
+            count = await anchors.count()
+            
+            for idx in range(count):
+                anchor = anchors.nth(idx)
+                if not await anchor.is_visible():
+                    continue
+                    
+                username = await anchor.inner_text()
+                username = username.strip().replace("@", "")
+                
+                # Exclude navigation links
+                if not username or len(username) < 2 or username.lower() in ["instagram", "home", "search", "explore", "messages", "profile", "notifications", "reels", "direct", "create", "threads"]:
+                    continue
+                    
+                # Find matching text inside spans
+                parent = anchor.locator('..').locator('..')
+                spans = parent.locator('span')
+                span_count = await spans.count()
+                
+                comment_text = ""
+                for s_idx in range(span_count):
+                    span_val = await spans.nth(s_idx).inner_text()
+                    span_val = span_val.strip()
+                    
+                    if span_val and span_val != username and span_val.lower() not in ["reply", "see translation", "view replies", "hide replies"]:
+                        if not re.match(r'^\d+[wdhms]$', span_val):
+                            comment_text = span_val
+                            break
+                            
+                if not comment_text:
+                    parent_higher = parent.locator('..')
+                    spans = parent_higher.locator('span')
+                    span_count = await spans.count()
+                    for s_idx in range(span_count):
+                        span_val = await spans.nth(s_idx).inner_text()
+                        span_val = span_val.strip()
+                        if span_val and span_val != username and span_val.lower() not in ["reply", "see translation", "view replies", "hide replies"]:
+                            if not re.match(r'^\d+[wdhms]$', span_val):
+                                comment_text = span_val
+                                break
+                                
+                if comment_text:
+                    if trigger_keyword.lower() in comment_text.lower():
+                        comments_found.append((username, comment_text))
+                        
+            unique_comments = list(set(comments_found))
+            log_to_db("INFO", f"Scraped comments. Found {len(unique_comments)} comments matching trigger '{trigger_keyword}'")
+            return unique_comments
+            
+        except Exception as e:
+            log_to_db("ERROR", f"Error scraping comments on {post_url}: {str(e)}")
+            return []
+
 # The background worker runner loop
 async def bot_worker_loop():
     global BOT_RUNNING
@@ -291,102 +366,161 @@ async def bot_worker_loop():
             min_delay = int(db.query(Setting).filter(Setting.key == "min_delay").first().value)
             max_delay = int(db.query(Setting).filter(Setting.key == "max_delay").first().value)
             
-            # 3. Check today's send count
+            # Fetch active account
+            active_account = db.query(Account).filter(Account.status == "connected").first()
+            if not active_account:
+                log_to_db("ERROR", "No active connected Instagram account found. Link an account and mark it 'connected'.")
+                db.close()
+                await asyncio.sleep(30)
+                continue
+
+            # 3. Check today's send count (targets + comments)
             today_start = datetime.combine(date.today(), datetime.min.time())
-            sent_today_count = db.query(Target).filter(
-                Target.status == "sent",
-                Target.sent_at >= today_start
-            ).count()
+            sent_targets = db.query(Target).filter(Target.status == "sent", Target.sent_at >= today_start).count()
+            sent_comments = db.query(ProcessedComment).filter(ProcessedComment.status == "sent", ProcessedComment.processed_at >= today_start).count()
+            total_sent_today = sent_targets + sent_comments
             
-            if sent_today_count >= daily_limit:
-                log_to_db("WARNING", f"Daily sending limit reached ({sent_today_count}/{daily_limit}). Bot sleeping until tomorrow.")
-                # Sleep for 15 minutes before checking settings again
+            if total_sent_today >= daily_limit:
+                log_to_db("WARNING", f"Daily sending limit reached ({total_sent_today}/{daily_limit}). Bot sleeping...")
                 db.close()
                 await asyncio.sleep(900)
                 continue
-                
-            # 4. Fetch the primary active account
-            active_account = db.query(Account).filter(Account.status == "connected").first()
-            if not active_account:
-                log_to_db("ERROR", "No active connected Instagram account found. Please link an account and mark it 'connected'.")
-                # Sleep for 30 seconds before re-checking
-                db.close()
-                await asyncio.sleep(30)
-                continue
-                
-            # 5. Fetch next pending target
-            next_target = db.query(Target).filter(Target.status == "pending").first()
-            if not next_target:
-                log_to_db("INFO", "No pending targets in the queue. Sleeping...")
-                db.close()
-                await asyncio.sleep(60)
-                continue
-                
-            # 6. Fetch active message template
-            templates = db.query(MessageTemplate).filter(MessageTemplate.is_active == True).all()
-            if not templates:
-                log_to_db("ERROR", "No active message templates found. Create and enable templates first.")
-                db.close()
-                await asyncio.sleep(30)
-                continue
-                
-            # Select random template
-            selected_template = random.choice(templates)
-            raw_message = selected_template.content
-            parsed_message = parse_spintax(raw_message)
             
-            # Mark target as sending
-            next_target.status = "sending"
-            db.commit()
-            
-            # Initialize bot instance
-            bot = InstagramBot(active_account.username)
-            await bot.init_browser(headless=settings.HEADLESS)
-            
-            try:
-                # Double check login
-                logged_in = await bot.check_login_status()
-                if not logged_in:
-                    log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
-                    active_account.status = "verification_needed"
-                    next_target.status = "pending"  # revert
-                    db.commit()
+            bot_action_taken = False
+
+            # --- Phase A: Comment-to-DM Trigger Checks ---
+            active_posts = db.query(MonitoredPost).filter(MonitoredPost.is_active == True).all()
+            if active_posts:
+                # Initialize bot
+                bot = InstagramBot(active_account.username)
+                await bot.init_browser(headless=settings.HEADLESS)
+                
+                try:
+                    # Verify login
+                    logged_in = await bot.check_login_status()
+                    if not logged_in:
+                        log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
+                        active_account.status = "verification_needed"
+                        db.commit()
+                        await bot.close_browser()
+                        db.close()
+                        await asyncio.sleep(30)
+                        continue
+                        
+                    for post in active_posts:
+                        # Scrape comments
+                        comments = await bot.scrape_post_comments(post.post_url, post.trigger_keyword)
+                        
+                        for username, comment_text in comments:
+                            if not BOT_RUNNING:
+                                break
+                                
+                            # Check if already processed
+                            exists = db.query(ProcessedComment).filter(
+                                ProcessedComment.username == username,
+                                ProcessedComment.post_id == post.id
+                            ).first()
+                            
+                            if not exists:
+                                log_to_db("INFO", f"New trigger comment '{comment_text}' detected from @{username}. Preparing DM outreach...")
+                                parsed_message = parse_spintax(post.template.content)
+                                
+                                try:
+                                    success = await bot.send_direct_message(username, parsed_message)
+                                    if success:
+                                        db.add(ProcessedComment(
+                                            username=username,
+                                            post_id=post.id,
+                                            comment_text=comment_text,
+                                            status="sent",
+                                            processed_at=datetime.utcnow()
+                                        ))
+                                        log_to_db("SUCCESS", f"Sent trigger comment DM to @{username}")
+                                    else:
+                                        raise Exception("DM delivery routine returned False.")
+                                except Exception as dm_err:
+                                    db.add(ProcessedComment(
+                                        username=username,
+                                        post_id=post.id,
+                                        comment_text=comment_text,
+                                        status="failed",
+                                        processed_at=datetime.utcnow()
+                                    ))
+                                    log_to_db("ERROR", f"Comment DM failed to @{username}: {dm_err}")
+                                
+                                db.commit()
+                                bot_action_taken = True
+                                
+                                # human delay spacer
+                                delay = random.randint(min_delay, max_delay)
+                                log_to_db("INFO", f"Sleeping for {delay} seconds between comment triggers...")
+                                for _ in range(delay):
+                                    if not BOT_RUNNING:
+                                        break
+                                    await asyncio.sleep(1)
+                                    
+                except Exception as loop_err:
+                    log_to_db("ERROR", f"Comment scraper thread encountered error: {loop_err}")
+                finally:
                     await bot.close_browser()
-                    continue
-                
-                # Send DM
-                success = await bot.send_direct_message(next_target.username, parsed_message)
-                if success:
-                    next_target.status = "sent"
-                    next_target.sent_at = datetime.utcnow()
-                    next_target.message_sent = parsed_message
-                    next_target.error_message = None
-                    log_to_db("SUCCESS", f"Successfully completed DM task for @{next_target.username}")
+
+            # --- Phase B: Standard Queue Checks ---
+            if not bot_action_taken and BOT_RUNNING:
+                next_target = db.query(Target).filter(Target.status == "pending").first()
+                if next_target:
+                    # Select template
+                    templates = db.query(MessageTemplate).filter(MessageTemplate.is_active == True).all()
+                    if templates:
+                        selected_template = random.choice(templates)
+                        parsed_message = parse_spintax(selected_template.content)
+                        
+                        next_target.status = "sending"
+                        db.commit()
+                        
+                        bot = InstagramBot(active_account.username)
+                        await bot.init_browser(headless=settings.HEADLESS)
+                        
+                        try:
+                            logged_in = await bot.check_login_status()
+                            if logged_in:
+                                success = await bot.send_direct_message(next_target.username, parsed_message)
+                                if success:
+                                    next_target.status = "sent"
+                                    next_target.sent_at = datetime.utcnow()
+                                    next_target.message_sent = parsed_message
+                                    next_target.error_message = None
+                                    log_to_db("SUCCESS", f"Successfully completed DM task for @{next_target.username}")
+                                else:
+                                    raise Exception("Direct message dispatch failed.")
+                                    
+                                await bot.perform_random_activity()
+                            else:
+                                log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
+                                active_account.status = "verification_needed"
+                                next_target.status = "pending"
+                        except Exception as queue_err:
+                            log_to_db("ERROR", f"Queue action failed: {queue_err}")
+                            next_target.status = "failed"
+                            next_target.error_message = str(queue_err)
+                            next_target.sent_at = datetime.utcnow()
+                        finally:
+                            db.commit()
+                            await bot.close_browser()
+                            
+                        # human delay spacer
+                        delay = random.randint(min_delay, max_delay)
+                        log_to_db("INFO", f"Sleeping for {delay} seconds between target queue sends...")
+                        for _ in range(delay):
+                            if not BOT_RUNNING:
+                                break
+                            await asyncio.sleep(1)
+                    else:
+                        log_to_db("ERROR", "No active message templates found. Create one first.")
+                        await asyncio.sleep(30)
                 else:
-                    raise Exception("DM routine finished without returning True status.")
-                    
-                # Simulate human browsing behavior
-                await bot.perform_random_activity()
-                
-            except Exception as bot_err:
-                log_to_db("ERROR", f"Bot action failed: {str(bot_err)}")
-                next_target.status = "failed"
-                next_target.error_message = str(bot_err)
-                next_target.sent_at = datetime.utcnow()
-            finally:
-                db.commit()
-                await bot.close_browser()
-                
-            # Random delay before next target
-            delay = random.randint(min_delay, max_delay)
-            log_to_db("INFO", f"Sleeping for {delay} seconds to mimic human delays...")
-            
-            # Break down sleep into smaller 1-second ticks so we can exit quickly if stop requested
-            for _ in range(delay):
-                if not BOT_RUNNING:
-                    break
-                await asyncio.sleep(1)
-                
+                    # Both phases idle, sleep for a bit
+                    await asyncio.sleep(45)
+
         except Exception as e:
             log_to_db("ERROR", f"Bot execution loop encountered an error: {str(e)}")
             await asyncio.sleep(10)

@@ -4,8 +4,9 @@ import Accounts from "./components/Accounts";
 import Targets from "./components/Targets";
 import Messages from "./components/Messages";
 import Settings from "./components/Settings";
+import CommentTriggers from "./components/CommentTriggers";
 import { getApiUrl, setApiUrl, apiFetch } from "./api";
-import { LayoutDashboard, UserCheck, Users, Mail, Settings as SettingsIcon, Link2, Check, RefreshCw } from "lucide-react";
+import { LayoutDashboard, UserCheck, Users, Mail, Settings as SettingsIcon, Link2, Check, RefreshCw, MessageSquare } from "lucide-react";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -45,6 +46,8 @@ export default function App() {
         return <Targets />;
       case "messages":
         return <Messages />;
+      case "comment-triggers":
+        return <CommentTriggers />;
       case "settings":
         return <Settings />;
       default:
@@ -95,6 +98,14 @@ export default function App() {
           </div>
 
           <div 
+            className={`nav-item ${activeTab === "comment-triggers" ? "active" : ""}`}
+            onClick={() => setActiveTab("comment-triggers")}
+          >
+            <MessageSquare size={18} />
+            <span>Comment Triggers</span>
+          </div>
+
+          <div 
             className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
             onClick={() => setActiveTab("settings")}
           >
@@ -127,7 +138,7 @@ export default function App() {
         <header className="page-header">
           <div>
             <h1 className="page-title" style={{ textTransform: "capitalize" }}>
-              {activeTab === "messages" ? "DM Templates" : activeTab === "accounts" ? "Instagram Accounts" : activeTab}
+              {activeTab === "messages" ? "DM Templates" : activeTab === "comment-triggers" ? "Comment Triggers" : activeTab === "accounts" ? "Instagram Accounts" : activeTab}
             </h1>
             <p className="page-subtitle">Manage automated Instagram messaging campaigns</p>
           </div>

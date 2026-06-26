@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal
+from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment
 from backend.bot import start_bot_background, stop_bot_background, InstagramBot, BOT_RUNNING
 
 @asynccontextmanager
@@ -100,6 +100,36 @@ class LogResponse(BaseModel):
     timestamp: datetime
     level: str
     message: str
+    
+    class Config:
+        from_attributes = True
+
+class MonitoredPostCreate(BaseModel):
+    post_url: str = Field(..., min_length=10, description="Instagram post or reel URL")
+    trigger_keyword: str = Field(..., min_length=1, description="Trigger word/letter, e.g. INFO")
+    template_id: int = Field(..., description="ID of message template to send")
+    is_active: bool = True
+
+class MonitoredPostResponse(BaseModel):
+    id: int
+    post_url: str
+    trigger_keyword: str
+    template_id: int
+    is_active: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class ProcessedCommentResponse(BaseModel):
+    id: int
+    username: str
+    post_id: int
+    comment_text: Optional[str] = None
+    status: str
+    processed_at: datetime
+    post_url: Optional[str] = None
+    trigger_keyword: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -396,3 +426,72 @@ def stop_bot():
         return {"status": "stopped", "message": "Bot thread signaled to stop."}
     else:
         return {"status": "stopped", "message": "Bot was not running."}
+
+# Monitored Posts CRUD
+@app.get("/api/posts", response_model=List[MonitoredPostResponse])
+def list_monitored_posts(db: Session = Depends(get_db)):
+    return db.query(MonitoredPost).all()
+
+@app.post("/api/posts", response_model=MonitoredPostResponse)
+def add_monitored_post(payload: MonitoredPostCreate, db: Session = Depends(get_db)):
+    # Verify template exists
+    tpl = db.query(MessageTemplate).filter(MessageTemplate.id == payload.template_id).first()
+    if not tpl:
+        raise HTTPException(status_code=400, detail="Connected message template does not exist.")
+        
+    db_post = MonitoredPost(
+        post_url=payload.post_url,
+        trigger_keyword=payload.trigger_keyword,
+        template_id=payload.template_id,
+        is_active=payload.is_active
+    )
+    db.add(db_post)
+    db.commit()
+    db.refresh(db_post)
+    log_to_db("INFO", f"Configured post trigger monitoring for keyword '{payload.trigger_keyword}' on post.")
+    return db_post
+
+@app.delete("/api/posts/{id}")
+def delete_monitored_post(id: int, db: Session = Depends(get_db)):
+    post = db.query(MonitoredPost).filter(MonitoredPost.id == id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Monitored post configuration not found.")
+    db.delete(post)
+    db.commit()
+    log_to_db("WARNING", f"Removed post monitoring trigger configuration (ID: {id})")
+    return {"message": "Monitored post configuration removed."}
+
+@app.patch("/api/posts/{id}")
+def toggle_monitored_post_status(id: int, db: Session = Depends(get_db)):
+    post = db.query(MonitoredPost).filter(MonitoredPost.id == id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Monitored post configuration not found.")
+    post.is_active = not post.is_active
+    db.commit()
+    db.refresh(post)
+    return post
+
+# Trigger History
+@app.get("/api/history", response_model=List[ProcessedCommentResponse])
+def get_trigger_history(limit: int = 100, db: Session = Depends(get_db)):
+    history = db.query(ProcessedComment).order_by(ProcessedComment.processed_at.desc()).limit(limit).all()
+    
+    # Map post details for visual UI references
+    result = []
+    for item in history:
+        # Fetch matching monitored post
+        post = db.query(MonitoredPost).filter(MonitoredPost.id == item.post_id).first()
+        post_url = post.post_url if post else "Deleted Post"
+        trigger_keyword = post.trigger_keyword if post else "N/A"
+        
+        result.append(ProcessedCommentResponse(
+            id=item.id,
+            username=item.username,
+            post_id=item.post_id,
+            comment_text=item.comment_text,
+            status=item.status,
+            processed_at=item.processed_at,
+            post_url=post_url,
+            trigger_keyword=trigger_keyword
+        ))
+    return result

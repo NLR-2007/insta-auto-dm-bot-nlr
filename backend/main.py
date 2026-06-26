@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db
+from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal
 from backend.bot import start_bot_background, stop_bot_background, InstagramBot, BOT_RUNNING
 
 @asynccontextmanager

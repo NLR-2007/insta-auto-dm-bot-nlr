@@ -1,0 +1,30 @@
+# Python virtual environment
+venv/
+.venv/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local database and data directories
+*.db
+backend/insta_automate.db
+backend/user_data/
+user_data/
+
+# Frontend dependencies and builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Local configuration files
+.env
+backend/.env
+
+# Log files
+*.log
+backend/*.log

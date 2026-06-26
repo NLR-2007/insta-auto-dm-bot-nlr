@@ -94,7 +94,7 @@ class InstagramBot:
         try:
             if navigate:
                 log_to_db("INFO", f"Navigating to check Instagram login status for {self.username}...")
-                await self.page.goto("https://www.instagram.com/", wait_until="networkidle", timeout=45000)
+                await self.page.goto("https://www.instagram.com/", wait_until="load", timeout=45000)
                 await asyncio.sleep(4)
             
             # Check if feed or navigation exists (e.g. search icon, direct message icon, or profile picture)
@@ -168,7 +168,7 @@ class InstagramBot:
             
         log_to_db("INFO", f"Navigating to profile: https://www.instagram.com/{target_username}/")
         try:
-            await self.page.goto(f"https://www.instagram.com/{target_username}/", wait_until="networkidle", timeout=30000)
+            await self.page.goto(f"https://www.instagram.com/{target_username}/", wait_until="load", timeout=30000)
             await asyncio.sleep(random.uniform(3.0, 5.0))
             
             # Check if profile is unavailable
@@ -254,7 +254,7 @@ class InstagramBot:
             return
         log_to_db("INFO", "Performing random human-like activity (scrolling home feed)...")
         try:
-            await self.page.goto("https://www.instagram.com/", wait_until="networkidle")
+            await self.page.goto("https://www.instagram.com/", wait_until="load")
             await asyncio.sleep(random.uniform(2.0, 4.0))
             
             # Scroll down slowly
@@ -273,7 +273,7 @@ class InstagramBot:
         log_to_db("INFO", f"Checking comments on post: {post_url}")
         comments_found = []
         try:
-            await self.page.goto(post_url, wait_until="networkidle", timeout=30000)
+            await self.page.goto(post_url, wait_until="load", timeout=30000)
             await asyncio.sleep(random.uniform(4.0, 6.0))
             
             # Instagram Reels/Posts on Web often hide the comments drawer by default.

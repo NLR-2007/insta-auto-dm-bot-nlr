@@ -26,11 +26,11 @@ def parse_spintax(text: str) -> str:
         text = text.replace(match.group(0), random.choice(options), 1)
     return text
 
-async def human_type(page: Page, selector: str, text: str):
-    """Simulates real human typing with random delays between characters."""
-    await page.focus(selector)
+async def human_type(locator, text: str):
+    """Simulates real human typing with random delays between characters on a Playwright Locator."""
+    await locator.focus()
     for char in text:
-        await page.type(selector, char, delay=random.randint(50, 150))
+        await locator.type(char, delay=random.randint(50, 150))
         await asyncio.sleep(random.uniform(0.01, 0.05))
 
 class InstagramBot:
@@ -211,6 +211,10 @@ class InstagramBot:
             # Selectors for Direct Message inputs
             dm_input_selectors = [
                 'div[contenteditable="true"][aria-label="Message"]',
+                'div[contenteditable="true"][aria-placeholder*="Message"]',
+                'div[contenteditable="true"][role="textbox"]',
+                'div[aria-placeholder*="Message"]',
+                'div[role="textbox"]',
                 'div[contenteditable="true"]',
                 'textarea[placeholder*="Message"]',
                 'textarea[placeholder*="message"]'
@@ -219,8 +223,13 @@ class InstagramBot:
             input_box = None
             for sel in dm_input_selectors:
                 loc = self.page.locator(sel)
-                if await loc.count() > 0 and await loc.first.is_visible():
-                    input_box = loc.first
+                count = await loc.count()
+                for i in range(count):
+                    item = loc.nth(i)
+                    if await item.is_visible():
+                        input_box = item
+                        break
+                if input_box:
                     break
                     
             if not input_box:
@@ -232,7 +241,7 @@ class InstagramBot:
             await asyncio.sleep(1.0)
             
             # Type message
-            await human_type(self.page, 'div[contenteditable="true"]' if await self.page.locator('div[contenteditable="true"]').count() > 0 else 'textarea', message)
+            await human_type(input_box, message)
             await asyncio.sleep(random.uniform(1.0, 2.0))
             
             # Press Enter to send, or look for the "Send" button

@@ -31,7 +31,9 @@ export const apiFetch = async (endpoint, options = {}) => {
     let errMsg = `Request failed: ${response.status} ${response.statusText}`;
     try {
       const data = await response.json();
-      if (data && data.detail) errMsg = data.detail;
+      if (data && data.detail) {
+        errMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+      }
     } catch (_) {}
     throw new Error(errMsg);
   }

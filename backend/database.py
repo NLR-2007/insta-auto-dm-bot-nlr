@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from backend.config import settings
 
@@ -16,6 +17,17 @@ except Exception as e:
     print(f"Error initializing DB engine with {database_url}. Falling back to SQLite. Error: {e}")
     database_url = "sqlite:///./insta_automate.db"
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    # Only run on SQLite connections to avoid breaking MySQL/PG
+    if type(dbapi_connection).__name__ == "Connection" or type(dbapi_connection).__module__ == "sqlite3":
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+        except Exception:
+            pass
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

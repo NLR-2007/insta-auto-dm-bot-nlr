@@ -52,6 +52,21 @@ class InstagramBot:
             "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
         )
         
+        # Check if storage state exists (uploaded cookies/localStorage)
+        storage_state_file = os.path.join(self.user_data_dir, "storage_state.json")
+        cookies_to_add = []
+        if os.path.exists(storage_state_file):
+            try:
+                import json
+                with open(storage_state_file, "r", encoding="utf-8") as f:
+                    state_data = json.load(f)
+                    if isinstance(state_data, dict):
+                        cookies_to_add = state_data.get("cookies", [])
+                    elif isinstance(state_data, list):
+                        cookies_to_add = state_data
+            except Exception as e:
+                print(f"Error reading storage_state.json: {e}")
+            
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.user_data_dir,
             headless=headless,
@@ -64,8 +79,30 @@ class InstagramBot:
             ]
         )
         
+        # Inject cookies post-launch since storage_state is not supported in launch_persistent_context
+        if cookies_to_add:
+            try:
+                # Clean up cookies to only pass valid keys and strip None/null values
+                cleaned_cookies = []
+                for cookie in cookies_to_add:
+                    if not isinstance(cookie, dict):
+                        continue
+                    cleaned_cookie = {}
+                    for k in ["name", "value", "url", "domain", "path", "expires", "httpOnly", "secure", "sameSite"]:
+                        if k in cookie and cookie[k] is not None:
+                            cleaned_cookie[k] = cookie[k]
+                    cleaned_cookies.append(cleaned_cookie)
+                await self.context.add_cookies(cleaned_cookies)
+            except Exception as e:
+                print(f"Error injecting cookies to browser context: {e}")
+        
+        # Use the default page created by persistent context instead of opening a new blank tab
+        if self.context.pages:
+            self.page = self.context.pages[0]
+        else:
+            self.page = await self.context.new_page()
+
         # Execute JS to bypass navigator.webdriver detection
-        self.page = await self.context.new_page()
         await self.page.add_init_script(
             "const newProto = navigator.__proto__; delete newProto.webdriver; navigator.__proto__ = newProto;"
         )
@@ -94,7 +131,10 @@ class InstagramBot:
         try:
             if navigate:
                 log_to_db("INFO", f"Navigating to check Instagram login status for {self.username}...")
-                await self.page.goto("https://www.instagram.com/", wait_until="load", timeout=45000)
+                try:
+                    await self.page.goto("https://www.instagram.com/", wait_until="domcontentloaded", timeout=30000)
+                except Exception as goto_err:
+                    log_to_db("WARNING", f"Navigation to check Instagram login status timed out or failed: {str(goto_err)}")
                 await asyncio.sleep(4)
             
             # Check if feed or navigation exists (e.g. search icon, direct message icon, or profile picture)
@@ -115,10 +155,12 @@ class InstagramBot:
             # Check if login form fields are visible
             login_form = await self.page.locator('input[name="username"]').is_visible()
             if login_form:
+                log_to_db("WARNING", f"Login form input detected on page. User is logged out.")
                 return False
                 
             current_url = self.page.url
             if "instagram.com/accounts/login" in current_url:
+                log_to_db("WARNING", f"Redirected to login page: {current_url}. User is logged out.")
                 return False
                 
             # If no logged in indicators are visible, strictly treat as not logged in
@@ -169,7 +211,10 @@ class InstagramBot:
 
         log_to_db("INFO", f"Navigating to profile: https://www.instagram.com/{target_username}/")
         try:
-            await self.page.goto(f"https://www.instagram.com/{target_username}/", wait_until="load", timeout=30000)
+            try:
+                await self.page.goto(f"https://www.instagram.com/{target_username}/", wait_until="domcontentloaded", timeout=25000)
+            except Exception as goto_err:
+                log_to_db("WARNING", f"Navigation to profile timed out or failed, continuing: {str(goto_err)}")
             await asyncio.sleep(random.uniform(3.0, 5.0))
 
             # Check if profile is unavailable
@@ -330,7 +375,10 @@ class InstagramBot:
 
     async def _send_via_direct_inbox(self, target_username: str):
         """Navigates to Direct inbox, creates a new message, and searches for the target user."""
-        await self.page.goto("https://www.instagram.com/direct/new/", wait_until="load", timeout=30000)
+        try:
+            await self.page.goto("https://www.instagram.com/direct/new/", wait_until="domcontentloaded", timeout=25000)
+        except Exception as goto_err:
+            log_to_db("WARNING", f"Navigation to direct inbox timed out or failed, continuing: {str(goto_err)}")
         await asyncio.sleep(random.uniform(3.0, 5.0))
         
         # Look for the search/recipient input field
@@ -535,7 +583,10 @@ class InstagramBot:
         log_to_db("INFO", f"Checking comments on post: {post_url}")
         comments_found = []
         try:
-            await self.page.goto(post_url, wait_until="load", timeout=30000)
+            try:
+                await self.page.goto(post_url, wait_until="domcontentloaded", timeout=25000)
+            except Exception as goto_err:
+                log_to_db("WARNING", f"Navigation to post timed out or failed, continuing: {str(goto_err)}")
             await asyncio.sleep(random.uniform(4.0, 6.0))
             
             # Instagram Reels/Posts on Web often hide the comments drawer by default.
@@ -684,9 +735,21 @@ async def bot_worker_loop():
                     # Verify login
                     logged_in = await bot.check_login_status()
                     if not logged_in:
-                        log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
-                        active_account.status = "verification_needed"
-                        db.commit()
+                        # Only mark as verification_needed if we're sure we are logged out (login page or form visible)
+                        is_login_page = False
+                        try:
+                            current_url = bot.page.url if bot.page else ""
+                            is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
+                        except Exception:
+                            pass
+                        
+                        if is_login_page:
+                            log_to_db("ERROR", f"Account {active_account.username} requires re-authentication (login page detected).")
+                            active_account.status = "verification_needed"
+                            db.commit()
+                        else:
+                            log_to_db("WARNING", f"Login verification check failed for {active_account.username} (likely transient timeout). Retaining status 'connected' to retry.")
+                            
                         await bot.close_browser()
                         db.close()
                         await asyncio.sleep(30)
@@ -695,6 +758,7 @@ async def bot_worker_loop():
                     for post in active_posts:
                         # Scrape comments
                         comments = await bot.scrape_post_comments(post.post_url, post.trigger_keyword)
+                        log_to_db("INFO", f"Trigger comments scraped for post {post.id}: {comments}")
                         
                         for username, comment_text in comments:
                             if not BOT_RUNNING:
@@ -802,8 +866,18 @@ async def bot_worker_loop():
                                     
                                 await bot.perform_random_activity()
                             else:
-                                log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
-                                active_account.status = "verification_needed"
+                                is_login_page = False
+                                try:
+                                    current_url = bot.page.url if bot.page else ""
+                                    is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
+                                except Exception:
+                                    pass
+                                
+                                if is_login_page:
+                                    log_to_db("ERROR", f"Account {active_account.username} requires re-authentication (login page detected).")
+                                    active_account.status = "verification_needed"
+                                else:
+                                    log_to_db("WARNING", f"Login verification check failed for {active_account.username} (likely transient timeout). Retaining status 'connected' to retry.")
                                 next_target.status = "pending"
                         except Exception as queue_err:
                             log_to_db("ERROR", f"Queue action failed: {queue_err}")
@@ -839,7 +913,7 @@ async def bot_worker_loop():
 def start_bot_background():
     """Starts the bot loop in a separate thread."""
     global BOT_RUNNING, BOT_THREAD, BOT_LOOP
-    if BOT_RUNNING:
+    if BOT_RUNNING or (BOT_THREAD and BOT_THREAD.is_alive()):
         return False
         
     db = SessionLocal()
@@ -869,15 +943,19 @@ def stop_bot_background():
     global BOT_RUNNING, BOT_LOOP
     if not BOT_RUNNING:
         return False
-        
-    db = SessionLocal()
-    try:
-        status_setting = db.query(Setting).filter(Setting.key == "status").first()
-        if status_setting:
-            status_setting.value = "stopped"
-            db.commit()
-    finally:
-        db.close()
-        
+
     BOT_RUNNING = False
+
+    try:
+        db = SessionLocal()
+        try:
+            status_setting = db.query(Setting).filter(Setting.key == "status").first()
+            if status_setting:
+                status_setting.value = "stopped"
+                db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[WARNING] DB update during stop failed (bot still stopped): {e}")
+
     return True

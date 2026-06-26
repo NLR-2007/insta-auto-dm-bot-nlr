@@ -1,16 +1,19 @@
 import os
+import json
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Union, Dict
 from datetime import datetime, date
 import threading
 import asyncio
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment
-from backend.bot import start_bot_background, stop_bot_background, InstagramBot, BOT_RUNNING
+import re
+import backend.bot as bot_module
+from backend.bot import start_bot_background, stop_bot_background, InstagramBot
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -142,27 +145,44 @@ def get_system_status(db: Session = Depends(get_db)):
     active_account = db.query(Account).filter(Account.status == "connected").first()
     active_user = active_account.username if active_account else None
     
-    # Calculate stats
+    # Calculate stats — combine targets table + processed_comments (comment triggers)
     today_start = datetime.combine(date.today(), datetime.min.time())
-    sent_today = db.query(Target).filter(
+    
+    # Targets (queue-based DMs)
+    target_sent_today = db.query(Target).filter(
         Target.status == "sent",
         Target.sent_at >= today_start
     ).count()
     
+    # Comment triggers (comment-based DMs)
+    comment_sent_today = db.query(ProcessedComment).filter(
+        ProcessedComment.status == "sent",
+        ProcessedComment.processed_at >= today_start
+    ).count()
+    
+    sent_today = target_sent_today + comment_sent_today
+    
     pending_count = db.query(Target).filter(Target.status == "pending").count()
-    failed_count = db.query(Target).filter(Target.status == "failed").count()
-    total_sent = db.query(Target).filter(Target.status == "sent").count()
+    
+    target_failed = db.query(Target).filter(Target.status == "failed").count()
+    comment_failed = db.query(ProcessedComment).filter(ProcessedComment.status == "failed").count()
+    failed_count = target_failed + comment_failed
+    
+    target_total_sent = db.query(Target).filter(Target.status == "sent").count()
+    comment_total_sent = db.query(ProcessedComment).filter(ProcessedComment.status == "sent").count()
+    total_sent = target_total_sent + comment_total_sent
     
     # Get bot status from db
     status_setting = db.query(Setting).filter(Setting.key == "status").first()
     bot_status = status_setting.value if status_setting else "stopped"
-    
-    # Override with thread flag safety check
-    if BOT_RUNNING and bot_status == "stopped":
+
+    # Override with thread flag safety check (read live value from bot module)
+    bot_running_flag = bot_module.BOT_RUNNING
+    if bot_running_flag and bot_status == "stopped":
         bot_status = "running"
-    
+
     return {
-        "bot_running": BOT_RUNNING or bot_status == "running",
+        "bot_running": bot_running_flag or bot_status == "running",
         "active_account": active_user,
         "sent_today": sent_today,
         "pending_count": pending_count,
@@ -255,6 +275,196 @@ def force_mark_connected(username: str, db: Session = Depends(get_db)):
     account.status = "connected"
     db.commit()
     return {"message": f"Account @{username} manually set to 'connected'."}
+
+def normalize_cookies_to_storage_state(cookie_data) -> dict:
+    cookies = []
+    origins = []
+    
+    # If it's a dict, it might be a Playwright storage state
+    if isinstance(cookie_data, dict):
+        raw_cookies = cookie_data.get("cookies", [])
+        origins = cookie_data.get("origins", [])
+    elif isinstance(cookie_data, list):
+        raw_cookies = cookie_data
+    else:
+        raise ValueError("Invalid session data format. Expected a JSON array of cookies or a Playwright storage state dictionary.")
+        
+    for rc in raw_cookies:
+        if not isinstance(rc, dict):
+            continue
+        # Extract name, value, domain, path
+        name = rc.get("name")
+        value = rc.get("value")
+        domain = rc.get("domain")
+        path = rc.get("path", "/")
+        
+        if not name or not value or not domain:
+            continue
+            
+        # Normalize fields
+        expires = rc.get("expires") or rc.get("expirationDate")
+        if expires is not None:
+            try:
+                expires = float(expires)
+            except (ValueError, TypeError):
+                expires = None
+                
+        http_only = rc.get("httpOnly")
+        if http_only is None:
+            http_only = rc.get("http_only", True)
+            
+        secure = rc.get("secure")
+        if secure is None:
+            secure = True
+            
+        same_site = rc.get("sameSite") or rc.get("same_site")
+        if same_site:
+            same_site_lower = str(same_site).lower()
+            if "lax" in same_site_lower:
+                same_site = "Lax"
+            elif "strict" in same_site_lower:
+                same_site = "Strict"
+            elif "none" in same_site_lower or "no_restriction" in same_site_lower:
+                same_site = "None"
+            else:
+                same_site = "Lax"
+        else:
+            same_site = "Lax"
+            
+        cookie = {
+            "name": name,
+            "value": value,
+            "domain": domain,
+            "path": path,
+            "httpOnly": http_only,
+            "secure": secure,
+            "sameSite": same_site
+        }
+        if expires is not None:
+            cookie["expires"] = expires
+        cookies.append(cookie)
+        
+    return {
+        "cookies": cookies,
+        "origins": origins
+    }
+
+def run_verification_worker(username: str):
+    import asyncio
+    from backend.config import settings
+    bot = InstagramBot(username)
+    
+    # Create a new event loop for this thread (bypasses Windows Proactor/Selector loop NotImplementedError)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    try:
+        # 1. Init browser headlessly
+        loop.run_until_complete(bot.init_browser(headless=True))
+        
+        # 2. Check login status
+        is_logged = loop.run_until_complete(bot.check_login_status())
+        
+        # 3. Close browser
+        loop.run_until_complete(bot.close_browser())
+        
+        # 4. Update status in database
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.username == username).first()
+            if account:
+                user_data_path = os.path.abspath(os.path.join(settings.USER_DATA_DIR, username))
+                storage_state_file = os.path.join(user_data_path, "storage_state.json")
+                if is_logged:
+                    account.status = "connected"
+                    log_to_db("SUCCESS", f"Session verified successfully! Account @{username} is now connected.")
+                else:
+                    account.status = "verification_needed"
+                    log_to_db("WARNING", f"Session cookies for @{username} are invalid or expired.")
+                    
+                    # Rename invalid storage state file
+                    bad_file = os.path.join(user_data_path, "storage_state_invalid.json")
+                    try:
+                        if os.path.exists(storage_state_file):
+                            if os.path.exists(bad_file):
+                                os.remove(bad_file)
+                            os.rename(storage_state_file, bad_file)
+                    except Exception:
+                        pass
+                db.commit()
+        except Exception as err:
+            log_to_db("ERROR", f"Error updating status after session verification: {err}")
+        finally:
+            db.close()
+            
+    except Exception as e:
+        log_to_db("ERROR", f"Verification thread failed for @{username}: {e}")
+        db = SessionLocal()
+        try:
+            account = db.query(Account).filter(Account.username == username).first()
+            if account:
+                account.status = "disconnected"
+                db.commit()
+        except Exception:
+            pass
+        finally:
+            db.close()
+    finally:
+        loop.close()
+
+@app.post("/api/accounts/{username}/session")
+async def save_session_cookies(
+    username: str, 
+    request: Request, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    from backend.config import settings
+    account = db.query(Account).filter(Account.username == username).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+        
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON format in session upload.")
+        
+    try:
+        # 1. Normalize cookies
+        normalized = normalize_cookies_to_storage_state(payload)
+        if not normalized["cookies"]:
+            raise HTTPException(status_code=400, detail="No valid cookies found in the session data.")
+            
+        # 2. Ensure user data folder exists
+        user_data_path = os.path.abspath(os.path.join(settings.USER_DATA_DIR, username))
+        os.makedirs(user_data_path, exist_ok=True)
+        
+        # 3. Write storage_state.json
+        storage_state_file = os.path.join(user_data_path, "storage_state.json")
+        with open(storage_state_file, "w", encoding="utf-8") as f:
+            json.dump(normalized, f, indent=2)
+            
+        # Set account status to connecting (verifying)
+        account.status = "connecting"
+        db.commit()
+        
+        log_to_db("INFO", f"Saved session cookies for @{username}. Spawning verification thread...")
+        
+        # 4. Trigger verification in background thread to avoid Windows NotImplementedError
+        background_tasks.add_task(run_verification_worker, username)
+        
+        return {"status": "connecting", "message": "Session uploaded successfully. Verifying connection..."}
+        
+    except ValueError as val_err:
+        # Reset status if validation failed
+        account.status = "disconnected"
+        db.commit()
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as e:
+        account.status = "disconnected"
+        db.commit()
+        log_to_db("ERROR", f"Failed to save session cookies for @{username}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save session file: {str(e)}")
 
 # Target Management
 @app.get("/api/targets", response_model=List[TargetResponse])
@@ -419,8 +629,16 @@ def start_bot(db: Session = Depends(get_db)):
         return {"status": "running", "message": "Bot is already running."}
 
 @app.post("/api/bot/stop")
-def stop_bot():
+def stop_bot(db: Session = Depends(get_db)):
     stopped = stop_bot_background()
+    # Always ensure DB status is "stopped" even if bot wasn't flagged as running
+    try:
+        status_setting = db.query(Setting).filter(Setting.key == "status").first()
+        if status_setting and status_setting.value != "stopped":
+            status_setting.value = "stopped"
+            db.commit()
+    except Exception:
+        pass
     if stopped:
         log_to_db("INFO", "Bot stop sequence triggered by API call.")
         return {"status": "stopped", "message": "Bot thread signaled to stop."}
@@ -456,6 +674,10 @@ def delete_monitored_post(id: int, db: Session = Depends(get_db)):
     post = db.query(MonitoredPost).filter(MonitoredPost.id == id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Monitored post configuration not found.")
+    
+    # Explicitly clear processed comments history for this post to avoid orphan rows on SQLite reuse
+    db.query(ProcessedComment).filter(ProcessedComment.post_id == id).delete()
+    
     db.delete(post)
     db.commit()
     log_to_db("WARNING", f"Removed post monitoring trigger configuration (ID: {id})")

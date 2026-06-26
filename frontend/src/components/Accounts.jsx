@@ -55,6 +55,32 @@ export default function Accounts() {
     }
   };
 
+  const handleUploadSession = async (username, file) => {
+    if (!file) return;
+    setLoading(true);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const sessionData = JSON.parse(event.target.result);
+        await apiFetch(`/api/accounts/${username}/session`, {
+          method: "POST",
+          body: JSON.stringify(sessionData),
+        });
+        alert(`Session uploaded and verified successfully for @${username}!`);
+        fetchAccounts();
+      } catch (err) {
+        alert("Failed to upload/verify session: " + err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    reader.onerror = () => {
+      alert("Failed to read file.");
+      setLoading(false);
+    };
+    reader.readAsText(file);
+  };
+
   const handleForceConnected = async (username) => {
     try {
       await apiFetch(`/api/accounts/${username}/mark-connected`, { method: "POST" });
@@ -112,7 +138,7 @@ export default function Accounts() {
                     )}
                     {acc.status === "connecting" && (
                       <span className="badge badge-sending">
-                        <Loader2 size={12} className="animate-spin" style={{ marginRight: "4px" }} /> Awaiting Laptop Login...
+                        <Loader2 size={12} className="animate-spin" style={{ marginRight: "4px" }} /> Verifying Session / Awaiting Login...
                       </span>
                     )}
                     {acc.status === "disconnected" && (
@@ -128,15 +154,46 @@ export default function Accounts() {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                   {acc.status !== "connected" && (
-                    <button 
-                      className="btn btn-secondary" 
-                      style={{ padding: "8px 12px", fontSize: "12px" }}
-                      onClick={() => handleTriggerLogin(acc.username)}
-                    >
-                      Authenticate (Playwright)
-                    </button>
+                    <>
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: "8px 12px", fontSize: "12px" }}
+                        onClick={() => handleTriggerLogin(acc.username)}
+                        disabled={loading}
+                      >
+                        Authenticate (Playwright)
+                      </button>
+                      
+                      <input
+                        type="file"
+                        id={`session-upload-${acc.username}`}
+                        accept=".json"
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            handleUploadSession(acc.username, file);
+                            e.target.value = "";
+                          }
+                        }}
+                      />
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ 
+                          padding: "8px 12px", 
+                          fontSize: "12px", 
+                          background: "var(--accent-gradient)", 
+                          color: "white", 
+                          border: "none" 
+                        }}
+                        onClick={() => document.getElementById(`session-upload-${acc.username}`).click()}
+                        disabled={loading}
+                      >
+                        {loading ? "Verifying..." : "Upload Session JSON"}
+                      </button>
+                    </>
                   )}
                   {acc.status === "connecting" && (
                     <button 
@@ -195,10 +252,24 @@ export default function Accounts() {
           <h4 style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)", display: "flex", gap: "8px", alignItems: "center" }}>
             <Shield size={16} /> Playwright Security Notice
           </h4>
-          <p style={{ color: "var(--text-secondary)", fontSize: "12px", marginTop: "8px", lineHeight: "1.6" }}>
+          <p style={{ color: "var(--text-secondary)", fontSize: "12px", marginTop: "8px", lineHeight: "1.6", marginBottom: "16px" }}>
             When you click <strong>Authenticate</strong>, an automated browser starts on your laptop. You can manually type your password, complete 2-factor authentication, or verify security emails. 
             Once logged in, close the browser or click Stop; your browser cookies will remain active for automated runs.
           </p>
+          
+          <h4 style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)", display: "flex", gap: "8px", alignItems: "center", borderTop: "1px solid var(--border-color)", paddingTop: "16px", marginTop: "16px" }}>
+            <Key size={16} /> Passwordless Cookie Upload (Safe)
+          </h4>
+          <p style={{ color: "var(--text-secondary)", fontSize: "12px", marginTop: "8px", lineHeight: "1.6" }}>
+            To avoid entering user credentials:
+          </p>
+          <ol style={{ color: "var(--text-secondary)", fontSize: "12px", paddingLeft: "16px", marginTop: "4px", lineHeight: "1.6" }}>
+            <li>Install a browser extension like <strong>EditThisCookie</strong> or <strong>Cookie-Editor</strong>.</li>
+            <li>Log in to your client's Instagram account in your browser.</li>
+            <li>Open the extension and click the <strong>Export</strong> button (select **JSON** format).</li>
+            <li>Save it as a <code>.json</code> file on your computer.</li>
+            <li>Click <strong>Upload Session JSON</strong> next to the account in the list to link and verify.</li>
+          </ol>
         </div>
       </div>
     </div>

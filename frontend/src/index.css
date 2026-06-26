@@ -337,6 +337,12 @@ a {
   border-color: var(--danger);
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* ---------- Form controls ---------- */
 .form-group {
   display: flex;

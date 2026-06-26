@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { apiFetch, getApiUrl } from "../api";
-import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock, Loader2 } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function Dashboard() {
@@ -114,20 +114,28 @@ export default function Dashboard() {
           </div>
           
           {status.bot_running ? (
-            <button 
-              className="btn btn-danger" 
+            <button
+              className="btn btn-danger"
               onClick={handleStopBot}
               disabled={actionLoading}
             >
-              <Square size={16} /> Stop Bot
+              {actionLoading ? (
+                <><Loader2 size={16} className="animate-spin" /> Stopping...</>
+              ) : (
+                <><Square size={16} /> Stop Bot</>
+              )}
             </button>
           ) : (
-            <button 
-              className="btn btn-primary" 
+            <button
+              className="btn btn-primary"
               onClick={handleStartBot}
               disabled={actionLoading || !status.active_account}
             >
-              <Play size={16} /> Start Automation
+              {actionLoading ? (
+                <><Loader2 size={16} className="animate-spin" /> Starting...</>
+              ) : (
+                <><Play size={16} /> Start Automation</>
+              )}
             </button>
           )}
         </div>

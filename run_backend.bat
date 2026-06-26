@@ -1,6 +1,6 @@
 @echo off
-title InstaDM Auto - Python Backend
-echo Starting Instagram Auto DM Python Backend Service...
+title GramGlide Auto DM - Python Backend
+echo Starting GramGlide Auto DM Python Backend Service...
 echo.
 
 if not exist "venv" (

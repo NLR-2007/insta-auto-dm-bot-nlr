@@ -101,6 +101,13 @@ class ProcessedComment(Base):
     
     post = relationship("MonitoredPost")
 
+class OptOut(Base):
+    __tablename__ = "opt_outs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, index=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # Dependency to get db session
 def get_db():
@@ -136,7 +143,12 @@ def init_db():
             {"key": "max_delay", "value": "120"},
             {"key": "working_hours_start", "value": "08:00"},
             {"key": "working_hours_end", "value": "22:00"},
-            {"key": "status", "value": "stopped"} # running, stopped
+            {"key": "status", "value": "stopped"}, # running, stopped
+            {"key": "api_mode", "value": "sandbox"}, # sandbox, official
+            {"key": "opt_out_keywords", "value": "stop, unsubscribe, optout, stopdm"},
+            {"key": "consent_enforce", "value": "true"},
+            {"key": "meta_page_access_token", "value": ""},
+            {"key": "meta_verify_token", "value": ""}
         ]
         for s in default_settings:
             exists = db.query(Setting).filter(Setting.key == s["key"]).first()

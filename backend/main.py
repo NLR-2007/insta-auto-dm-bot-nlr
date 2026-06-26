@@ -10,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment
+from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut
 import re
 import backend.bot as bot_module
 from backend.bot import start_bot_background, stop_bot_background, InstagramBot
+from backend.official_api import router as official_api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,8 +27,8 @@ async def lifespan(app: FastAPI):
     log_to_db("INFO", "FastAPI server shutting down. Bot worker stopped.")
 
 app = FastAPI(
-    title="Instagram Auto DM API",
-    description="Backend service managing Playwright-based Instagram DM automation",
+    title="GramGlide Auto DM API",
+    description="Backend service managing compliant Instagram DM automation",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -41,9 +42,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(official_api_router)
+
 @app.get("/")
 def read_root():
-    return {"status": "online", "message": "Instagram Auto DM Bot API is running!"}
+    return {"status": "online", "message": "GramGlide Auto DM Bot API is running!"}
 
 
 # --- Pydantic Schema Declarations ---
@@ -97,6 +100,22 @@ class SettingUpdateSchema(BaseModel):
     max_delay: int = Field(default=120, ge=15)
     working_hours_start: str = Field(default="08:00")
     working_hours_end: str = Field(default="22:00")
+    api_mode: str = Field(default="sandbox")
+    opt_out_keywords: str = Field(default="stop, unsubscribe, optout, stopdm")
+    consent_enforce: bool = Field(default=True)
+    meta_page_access_token: Optional[str] = Field(default="")
+    meta_verify_token: Optional[str] = Field(default="")
+
+class OptOutCreateSchema(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+
+class OptOutResponse(BaseModel):
+    id: int
+    username: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
 
 class LogResponse(BaseModel):
     id: int
@@ -594,7 +613,12 @@ def update_settings(payload: SettingUpdateSchema, db: Session = Depends(get_db))
         "min_delay": str(payload.min_delay),
         "max_delay": str(payload.max_delay),
         "working_hours_start": payload.working_hours_start,
-        "working_hours_end": payload.working_hours_end
+        "working_hours_end": payload.working_hours_end,
+        "api_mode": payload.api_mode,
+        "opt_out_keywords": payload.opt_out_keywords,
+        "consent_enforce": "true" if payload.consent_enforce else "false",
+        "meta_page_access_token": payload.meta_page_access_token or "",
+        "meta_verify_token": payload.meta_verify_token or ""
     }
     
     for k, v in items.items():
@@ -717,3 +741,35 @@ def get_trigger_history(limit: int = 100, db: Session = Depends(get_db)):
             trigger_keyword=trigger_keyword
         ))
     return result
+
+# OptOut Blocklist management
+@app.get("/api/optouts", response_model=List[OptOutResponse])
+def list_optouts(db: Session = Depends(get_db)):
+    return db.query(OptOut).order_by(OptOut.id.desc()).all()
+
+@app.post("/api/optouts", response_model=OptOutResponse)
+def add_optout(payload: OptOutCreateSchema, db: Session = Depends(get_db)):
+    clean_username = payload.username.strip().lower().replace("@", "")
+    if not clean_username:
+        raise HTTPException(status_code=400, detail="Invalid username")
+        
+    exists = db.query(OptOut).filter(OptOut.username == clean_username).first()
+    if exists:
+        return exists
+        
+    db_optout = OptOut(username=clean_username)
+    db.add(db_optout)
+    db.commit()
+    db.refresh(db_optout)
+    log_to_db("WARNING", f"Added user @{clean_username} to blocklist.")
+    return db_optout
+
+@app.delete("/api/optouts/{id}")
+def delete_optout(id: int, db: Session = Depends(get_db)):
+    optout = db.query(OptOut).filter(OptOut.id == id).first()
+    if not optout:
+        raise HTTPException(status_code=404, detail="Blocklist entry not found")
+    db.delete(optout)
+    db.commit()
+    log_to_db("INFO", f"Removed user @{optout.username} from blocklist.")
+    return {"message": "Blocklist entry removed."}

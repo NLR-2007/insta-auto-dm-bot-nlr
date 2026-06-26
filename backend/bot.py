@@ -724,6 +724,14 @@ async def bot_worker_loop():
             
             bot_action_taken = False
 
+            # Check API Mode (suspends Playwright if using compliant official Meta API)
+            api_mode_setting = db.query(Setting).filter(Setting.key == "api_mode").first()
+            api_mode = api_mode_setting.value if api_mode_setting else "sandbox"
+            if api_mode == "official":
+                db.close()
+                await asyncio.sleep(30)
+                continue
+
             # --- Phase A: Comment-to-DM Trigger Checks ---
             active_posts = db.query(MonitoredPost).filter(MonitoredPost.is_active == True).all()
             if active_posts:
@@ -763,7 +771,26 @@ async def bot_worker_loop():
                         for username, comment_text in comments:
                             if not BOT_RUNNING:
                                 break
-                                
+                            
+                            # 1. Opt-out keyword check
+                            opt_out_setting = db.query(Setting).filter(Setting.key == "opt_out_keywords").first()
+                            opt_out_keywords = [k.strip().lower() for k in (opt_out_setting.value if opt_out_setting else "").split(",") if k.strip()]
+                            if comment_text.strip().lower() in opt_out_keywords:
+                                from backend.database import OptOut
+                                exists = db.query(OptOut).filter(OptOut.username == username.lower()).first()
+                                if not exists:
+                                    db.add(OptOut(username=username.lower()))
+                                    db.commit()
+                                    log_to_db("WARNING", f"[COMPLIANCE] Auto-blocked @{username} due to unsubscribe comment.")
+                                continue
+
+                            # 2. Blocklist check
+                            from backend.database import OptOut
+                            blocked = db.query(OptOut).filter(OptOut.username == username.lower()).first()
+                            if blocked:
+                                log_to_db("WARNING", f"[COMPLIANCE] Ignored trigger comment: @{username} is in the blocklist.")
+                                continue
+
                             # Check if already processed successfully
                             existing = db.query(ProcessedComment).filter(
                                 ProcessedComment.username == username,
@@ -837,6 +864,16 @@ async def bot_worker_loop():
             if not bot_action_taken and BOT_RUNNING:
                 next_target = db.query(Target).filter(Target.status == "pending").first()
                 if next_target:
+                    # Blocklist check
+                    from backend.database import OptOut
+                    blocked = db.query(OptOut).filter(OptOut.username == next_target.username.lower()).first()
+                    if blocked:
+                        log_to_db("WARNING", f"[COMPLIANCE] Skipping target queue: @{next_target.username} has opted out.")
+                        next_target.status = "failed"
+                        next_target.error_message = "Blocked: User has opted out / unsubscribed."
+                        db.commit()
+                        continue
+                        
                     # Select template
                     templates = db.query(MessageTemplate).filter(MessageTemplate.is_active == True).all()
                     if templates:

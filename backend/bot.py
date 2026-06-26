@@ -133,10 +133,11 @@ class InstagramBot:
             log_to_db("ERROR", f"Error checking login status: {str(e)}")
             return False
 
-    async def run_manual_login_session(self):
+    async def run_manual_login_session(self) -> bool:
         """Launches a visible browser window so the user can perform manual login/2FA."""
         log_to_db("INFO", f"Launching manual login browser window for {self.username}...")
         await self.init_browser(headless=False)
+        success = False
         try:
             await self.page.goto("https://www.instagram.com/accounts/login/", wait_until="load")
             log_to_db("INFO", "Please perform the login in the opened browser window. Do not close it until completed.")
@@ -154,6 +155,7 @@ class InstagramBot:
                 if is_logged:
                     log_to_db("SUCCESS", f"Successfully logged into account {self.username}! Saving session...")
                     await asyncio.sleep(8) # Give it extra time to write session cookies to local storage
+                    success = True
                     break
                 await asyncio.sleep(5)
                 
@@ -162,6 +164,8 @@ class InstagramBot:
         finally:
             await self.close_browser()
             log_to_db("INFO", "Manual login browser window closed.")
+            
+        return success
 
     async def send_direct_message(self, target_username: str, message: str) -> bool:
         """Sends a direct message to a target username by navigating directly to their profile."""

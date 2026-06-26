@@ -174,22 +174,24 @@ def delete_account(username: str, db: Session = Depends(get_db)):
     log_to_db("WARNING", f"Deleted account: @{username}")
     return {"message": f"Account @{username} successfully removed."}
 
-# Manual Login Trigger (runs browser locally in background task)
 def run_login_worker(username: str):
     bot = InstagramBot(username)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(bot.run_manual_login_session())
+        success = loop.run_until_complete(bot.run_manual_login_session())
         
-        # When the manual login session is finished, mark as connected
-        # Instagram's feed redirects can cause head-less login checks to trigger challenges, so we mark it directly.
+        # When the manual login session is finished, mark status based on success
         db = SessionLocal()
         try:
             account = db.query(Account).filter(Account.username == username).first()
             if account:
-                account.status = "connected"
-                log_to_db("SUCCESS", f"Account @{username} successfully authenticated and marked 'connected'")
+                if success:
+                    account.status = "connected"
+                    log_to_db("SUCCESS", f"Account @{username} successfully authenticated and marked 'connected'")
+                else:
+                    account.status = "disconnected"
+                    log_to_db("WARNING", f"Account @{username} authentication cancelled or failed.")
                 db.commit()
         except Exception as err:
             log_to_db("ERROR", f"Error post-login update: {err}")

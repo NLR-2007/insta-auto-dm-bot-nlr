@@ -143,7 +143,8 @@ class InstagramBot:
             
             # Wait for user to log in manually - we poll login state every 5 seconds
             # Or run until browser window is closed
-            for _ in range(60): # 5 minutes limit
+            # Increased limit to 360 iterations (30 minutes) to give ample time for captchas/verification
+            for _ in range(360): 
                 if self.page.is_closed():
                     log_to_db("WARNING", "Login browser window closed by user.")
                     break
@@ -152,7 +153,7 @@ class InstagramBot:
                 is_logged = await self.check_login_status()
                 if is_logged:
                     log_to_db("SUCCESS", f"Successfully logged into account {self.username}! Saving session...")
-                    await asyncio.sleep(5) # Give it time to write cookies to local storage
+                    await asyncio.sleep(8) # Give it extra time to write session cookies to local storage
                     break
                 await asyncio.sleep(5)
                 

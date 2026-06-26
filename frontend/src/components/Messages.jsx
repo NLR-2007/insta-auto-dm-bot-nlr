@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
-import { Plus, Trash2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Sparkles, MessageSquare, Eye, Copy, RefreshCw } from "lucide-react";
 
 export default function Messages() {
   const [templates, setTemplates] = useState([]);
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(false);
+  const [previewSeed, setPreviewSeed] = useState(0); // to force random preview re-generation
+  const textareaRef = useRef(null);
 
   const fetchTemplates = async () => {
     try {
@@ -59,72 +61,138 @@ export default function Messages() {
     }
   };
 
+  // Helper to insert quick tags at the cursor position
+  const insertPlaceholder = (tag) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    
+    setContent(before + tag + after);
+    
+    // Focus back and set cursor position right after the inserted tag
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + tag.length, start + tag.length);
+    }, 10);
+  };
+
+  // Generate dynamic live preview from the spintax content
+  const getLivePreview = (text) => {
+    if (!text.trim()) return "Start typing to generate a live outreach preview...";
+    
+    // Replace placeholders
+    let preview = text.replace(/@username/g, "@nlr2007").replace(/\{username\}/g, "nlr2007");
+    
+    // Evaluate spintax (either pick first option or pseudo-random option based on previewSeed)
+    const pattern = /\{([^{}]+)\}/;
+    let iterations = 0;
+    while (pattern.test(preview) && iterations < 50) {
+      const match = preview.match(pattern);
+      const options = match[1].split('|');
+      
+      // Determine index based on seed (so it updates on refresh button click)
+      const index = Math.abs(previewSeed + iterations) % options.length;
+      preview = preview.replace(match[0], options[index]);
+      iterations++;
+    }
+    return preview;
+  };
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "24px" }}>
-      {/* Templates List */}
-      <div className="glass-card">
-        <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "16px" }}>Message Templates</h3>
-        {templates.length === 0 ? (
-          <div style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
-            No message templates registered. Create one using the form on the right.
+    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "28px" }}>
+      {/* Templates List Column */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <div className="glass-card">
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "16px" }}>
+            <MessageSquare size={20} style={{ color: "var(--accent-pink)" }} />
+            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Outreach Templates</h3>
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {templates.map((tpl) => (
-              <div 
-                key={tpl.id} 
-                className="glass-card" 
-                style={{ 
-                  padding: "20px", 
-                  background: "rgba(255,255,255,0.01)", 
-                  display: "flex", 
-                  flexDirection: "column", 
-                  gap: "12px" 
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>{tpl.name}</h4>
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button 
-                      className={`btn ${tpl.is_active ? "btn-primary" : "btn-secondary"}`}
-                      style={{ padding: "6px 12px", fontSize: "12px" }}
-                      onClick={() => handleToggleActive(tpl.id)}
-                    >
-                      {tpl.is_active ? "Active" : "Inactive"}
-                    </button>
-                    <button 
-                      className="btn btn-danger" 
-                      style={{ padding: "6px 10px" }}
-                      onClick={() => handleDeleteTemplate(tpl.id)}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
+          
+          {templates.length === 0 ? (
+            <div style={{ padding: "60px 40px", textAlign: "center", color: "var(--text-secondary)" }}>
+              No message templates registered yet. Create your first template using the editor.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {templates.map((tpl) => (
                 <div 
+                  key={tpl.id} 
+                  className="glass-card" 
                   style={{ 
-                    background: "rgba(0,0,0,0.2)", 
-                    padding: "12px", 
-                    borderRadius: "8px", 
-                    color: "var(--text-secondary)", 
-                    fontSize: "14px",
-                    fontFamily: "monospace",
-                    whiteSpace: "pre-wrap"
+                    padding: "20px", 
+                    background: "rgba(255, 255, 255, 0.015)",
+                    border: tpl.is_active ? "1px solid rgba(124, 77, 255, 0.25)" : "1px solid var(--border-color)",
+                    display: "flex", 
+                    flexDirection: "column", 
+                    gap: "14px",
+                    boxShadow: tpl.is_active ? "0 4px 20px rgba(124, 77, 255, 0.08)" : "none"
                   }}
                 >
-                  {tpl.content}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>{tpl.name}</h4>
+                      {tpl.is_active && (
+                        <span style={{ fontSize: "11px", color: "var(--accent-purple)", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          ● Active Target Template
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button 
+                        className={`btn ${tpl.is_active ? "btn-primary" : "btn-secondary"}`}
+                        style={{ padding: "6px 12px", fontSize: "12px", height: "30px" }}
+                        onClick={() => handleToggleActive(tpl.id)}
+                      >
+                        {tpl.is_active ? "Active" : "Inactive"}
+                      </button>
+                      <button 
+                        className="btn btn-danger" 
+                        style={{ padding: "6px 10px", height: "30px" }}
+                        onClick={() => handleDeleteTemplate(tpl.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div 
+                    style={{ 
+                      background: "rgba(0,0,0,0.25)", 
+                      padding: "16px", 
+                      borderRadius: "10px", 
+                      color: "var(--text-secondary)", 
+                      fontSize: "13.5px",
+                      fontFamily: "monospace",
+                      whiteSpace: "pre-wrap",
+                      border: "1px solid rgba(255,255,255,0.02)",
+                      lineHeight: "1.5"
+                    }}
+                  >
+                    {tpl.content}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Configuration & Guide */}
+      {/* Editor & Guide Column */}
       <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-        {/* Form */}
+        
+        {/* Modern Interactive Editor */}
         <div className="glass-card">
-          <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "16px" }}>Create Template</h3>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", marginBottom: "20px" }}>
+            <Sparkles size={20} style={{ color: "var(--accent-purple)" }} />
+            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Create Template</h3>
+          </div>
+          
           <form onSubmit={handleAddTemplate}>
             <div className="form-group">
               <label className="form-label">Template Name</label>
@@ -139,12 +207,14 @@ export default function Messages() {
               />
             </div>
             
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: "12px" }}>
               <label className="form-label">Message Content</label>
               <textarea 
+                ref={textareaRef}
+                id="template-content-textarea"
                 className="form-textarea" 
-                style={{ height: "120px" }}
-                placeholder="e.g. {Hello|Hi|Hey} @username! {Saw your profile|Loved your feed}..." 
+                style={{ height: "140px", lineHeight: "1.6" }}
+                placeholder="e.g. {Hello|Hi|Hey} @username! {Thanks for commenting|Appreciate the comment}..." 
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 disabled={loading}
@@ -152,10 +222,51 @@ export default function Messages() {
               />
             </div>
             
+            {/* Quick Insertion Pills */}
+            <div style={{ marginBottom: "20px" }}>
+              <span style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)", fontWeight: "600", display: "block", marginBottom: "8px" }}>
+                ⚡ Quick Insert Placeholders
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: "4px 10px", fontSize: "11px", borderRadius: "6px" }}
+                  onClick={() => insertPlaceholder("@username")}
+                >
+                  + @username
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: "4px 10px", fontSize: "11px", borderRadius: "6px" }}
+                  onClick={() => insertPlaceholder("{Hello|Hi|Hey}")}
+                >
+                  + Greetings
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: "4px 10px", fontSize: "11px", borderRadius: "6px" }}
+                  onClick={() => insertPlaceholder("{Thanks for commenting!|Thank you for commenting!|Appreciate the support!}")}
+                >
+                  + Comment Thanks
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: "4px 10px", fontSize: "11px", borderRadius: "6px" }}
+                  onClick={() => insertPlaceholder("{Check out the link|Here is the link}: ")}
+                >
+                  + Link Intro
+                </button>
+              </div>
+            </div>
+            
             <button 
               type="submit" 
               className="btn btn-primary" 
-              style={{ width: "100%" }}
+              style={{ width: "100%", height: "45px" }}
               disabled={loading}
             >
               <Plus size={16} /> Save Template
@@ -163,26 +274,53 @@ export default function Messages() {
           </form>
         </div>
 
-        {/* Spintax Helper */}
-        <div className="glass-card">
-          <h4 style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)", marginBottom: "8px" }}>
-            💡 What is Spintax?
-          </h4>
-          <p style={{ color: "var(--text-secondary)", fontSize: "13px", lineHeight: "1.6" }}>
-            Instagram detects identical messages sent to multiple people as spam. 
-            Use spintax formatting (curly brackets and vertical bars) to generate unique combinations automatically.
-            <br /><br />
-            <strong>Example Syntax:</strong>
-            <br />
-            <code>{"{Hello|Hi|Hey} there! I {liked|loved} your content."}</code>
-            <br /><br />
-            <strong>Possible variations sent:</strong>
-            <ul style={{ paddingLeft: "16px", marginTop: "4px" }}>
-              <li>• "Hello there! I liked your content."</li>
-              <li>• "Hi there! I loved your content."</li>
-              <li>• "Hey there! I liked your content."</li>
-            </ul>
-          </p>
+        {/* Live Preview Console */}
+        <div 
+          className="glass-card" 
+          style={{ 
+            background: "rgba(124, 77, 255, 0.02)",
+            border: "1px dashed rgba(124, 77, 255, 0.2)"
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <Eye size={16} style={{ color: "var(--accent-purple)" }} />
+              <h4 style={{ fontSize: "14px", fontWeight: "600", color: "var(--text-primary)" }}>
+                Live Message Preview
+              </h4>
+            </div>
+            <button 
+              type="button"
+              className="btn btn-secondary" 
+              style={{ padding: "4px 8px", fontSize: "10px", height: "24px", display: "flex", gap: "4px" }}
+              onClick={() => setPreviewSeed(s => s + 1)}
+              disabled={!content.trim()}
+            >
+              <RefreshCw size={10} /> Alternate Option
+            </button>
+          </div>
+          
+          <div 
+            style={{ 
+              background: "#05070a", 
+              padding: "16px", 
+              borderRadius: "12px", 
+              color: content.trim() ? "var(--text-primary)" : "var(--text-muted)", 
+              fontSize: "13.5px",
+              fontFamily: "sans-serif",
+              border: "1px solid var(--border-color)",
+              minHeight: "80px",
+              display: "flex",
+              alignItems: "center",
+              lineHeight: "1.6",
+              whiteSpace: "pre-wrap"
+            }}
+          >
+            {getLivePreview(content)}
+          </div>
+          <span style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "8px", display: "block", textAlign: "right" }}>
+            * Previewed for target user `@nlr2007`
+          </span>
         </div>
       </div>
     </div>

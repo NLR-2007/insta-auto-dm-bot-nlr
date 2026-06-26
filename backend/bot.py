@@ -266,7 +266,7 @@ class InstagramBot:
             log_to_db("WARNING", f"Failed random activity: {e}")
 
     async def scrape_post_comments(self, post_url: str, trigger_keyword: str) -> list:
-        """Navigates to post_url and extracts commenter usernames and comment texts."""
+        """Navigates to post_url, ensures the comment drawer is open, and extracts comments."""
         if not self.page:
             raise Exception("Browser not initialized.")
         
@@ -276,8 +276,23 @@ class InstagramBot:
             await self.page.goto(post_url, wait_until="networkidle", timeout=30000)
             await asyncio.sleep(random.uniform(4.0, 6.0))
             
+            # Instagram Reels/Posts on Web often hide the comments drawer by default.
+            # Let's check if the comments container is open. If not, click the comment button.
             try:
-                # Scroll comment area if possible
+                # Look for comment input box or scrollable comment list container
+                comment_input = self.page.locator('textarea[placeholder*="comment"], textarea[placeholder*="Comment"]')
+                if await comment_input.count() == 0:
+                    # Click the comment drawer button (usually button containing the comment svg icon)
+                    comment_btn = self.page.locator('button:has(svg[aria-label="Comment"]), svg[aria-label="Comment"]').first
+                    if await comment_btn.is_visible():
+                        log_to_db("INFO", "Comments drawer seems closed. Clicking Comment button to open drawer...")
+                        await comment_btn.click(force=True)
+                        await asyncio.sleep(3.0)
+            except Exception as click_err:
+                log_to_db("WARNING", f"Could not trigger comment drawer button: {click_err}")
+            
+            try:
+                # Scroll comment area if possible to load more comments
                 comment_container = self.page.locator('div[style*="overflow-y: scroll"], ul[role="list"]')
                 if await comment_container.count() > 0:
                     await comment_container.first.evaluate("el => el.scrollTop = el.scrollHeight")
@@ -285,52 +300,66 @@ class InstagramBot:
             except Exception:
                 pass
                 
-            # Scan elements for user profile links
-            anchors = self.page.locator('a[href^="/"]')
-            count = await anchors.count()
-            
-            for idx in range(count):
-                anchor = anchors.nth(idx)
-                if not await anchor.is_visible():
-                    continue
+            # Evaluate JS-based scraper to find comments
+            raw_comments = await self.page.evaluate("""() => {
+                const results = [];
+                const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
+                for (const anchor of anchors) {
+                    const href = anchor.getAttribute('href');
+                    if (!href) continue;
                     
-                username = await anchor.inner_text()
-                username = username.strip().replace("@", "")
-                
-                # Exclude navigation links
-                if not username or len(username) < 2 or username.lower() in ["instagram", "home", "search", "explore", "messages", "profile", "notifications", "reels", "direct", "create", "threads"]:
-                    continue
+                    const parts = href.split('/').filter(Boolean);
+                    if (parts.length !== 1) continue;
                     
-                # Find matching text inside spans
-                parent = anchor.locator('..').locator('..')
-                spans = parent.locator('span')
-                span_count = await spans.count()
-                
-                comment_text = ""
-                for s_idx in range(span_count):
-                    span_val = await spans.nth(s_idx).inner_text()
-                    span_val = span_val.strip()
+                    const username = parts[0];
+                    if (['instagram', 'home', 'search', 'explore', 'messages', 'profile', 'notifications', 'reels', 'direct', 'create', 'threads'].includes(username.toLowerCase())) {
+                        continue;
+                    }
                     
-                    if span_val and span_val != username and span_val.lower() not in ["reply", "see translation", "view replies", "hide replies"]:
-                        if not re.match(r'^\d+[wdhms]$', span_val):
-                            comment_text = span_val
-                            break
+                    let parent = anchor.parentElement;
+                    let foundCommentRow = null;
+                    for (let i = 0; i < 8 && parent; i++) {
+                        const hasReply = Array.from(parent.querySelectorAll('span, div, button')).some(el => {
+                            const txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
+                            return txt === 'reply';
+                        });
+                        if (hasReply) {
+                            foundCommentRow = parent;
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                    
+                    if (foundCommentRow) {
+                        const spans = Array.from(foundCommentRow.querySelectorAll('span'));
+                        let commentText = '';
+                        for (const span of spans) {
+                            const spanVal = span.innerText ? span.innerText.trim() : '';
+                            if (!spanVal) continue;
                             
-                if not comment_text:
-                    parent_higher = parent.locator('..')
-                    spans = parent_higher.locator('span')
-                    span_count = await spans.count()
-                    for s_idx in range(span_count):
-                        span_val = await spans.nth(s_idx).inner_text()
-                        span_val = span_val.strip()
-                        if span_val and span_val != username and span_val.lower() not in ["reply", "see translation", "view replies", "hide replies"]:
-                            if not re.match(r'^\d+[wdhms]$', span_val):
-                                comment_text = span_val
-                                break
-                                
-                if comment_text:
-                    if trigger_keyword.lower() in comment_text.lower():
-                        comments_found.append((username, comment_text))
+                            if (spanVal.toLowerCase() === username.toLowerCase()) continue;
+                            if (spanVal.toLowerCase() === 'reply') continue;
+                            if (spanVal.toLowerCase() === 'see translation') continue;
+                            if (spanVal.toLowerCase().includes('view replies')) continue;
+                            if (spanVal.toLowerCase().includes('hide replies')) continue;
+                            if (/^\d+[wdhms]$/.test(spanVal)) continue;
+                            
+                            commentText = spanVal;
+                            break;
+                        }
+                        if (commentText) {
+                            results.push({ username, commentText });
+                        }
+                    }
+                }
+                return results;
+            }""")
+            
+            for item in raw_comments:
+                uname = item["username"]
+                text = item["commentText"]
+                if trigger_keyword.lower() in text.lower():
+                    comments_found.append((uname, text))
                         
             unique_comments = list(set(comments_found))
             log_to_db("INFO", f"Scraped comments. Found {len(unique_comments)} comments matching trigger '{trigger_keyword}'")
@@ -417,7 +446,9 @@ async def bot_worker_loop():
                             
                             if not exists:
                                 log_to_db("INFO", f"New trigger comment '{comment_text}' detected from @{username}. Preparing DM outreach...")
-                                parsed_message = parse_spintax(post.template.content)
+                                raw_msg = post.template.content
+                                replaced_msg = raw_msg.replace("@username", f"@{username}").replace("{username}", username)
+                                parsed_message = parse_spintax(replaced_msg)
                                 
                                 try:
                                     success = await bot.send_direct_message(username, parsed_message)
@@ -466,7 +497,9 @@ async def bot_worker_loop():
                     templates = db.query(MessageTemplate).filter(MessageTemplate.is_active == True).all()
                     if templates:
                         selected_template = random.choice(templates)
-                        parsed_message = parse_spintax(selected_template.content)
+                        raw_msg = selected_template.content
+                        replaced_msg = raw_msg.replace("@username", f"@{next_target.username}").replace("{username}", next_target.username)
+                        parsed_message = parse_spintax(replaced_msg)
                         
                         next_target.status = "sending"
                         db.commit()

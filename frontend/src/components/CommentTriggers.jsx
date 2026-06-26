@@ -174,6 +174,7 @@ export default function CommentTriggers() {
                 When a user leaves a comment on your post containing your **Trigger Word/Letter**, the backend Playwright script automatically detects it, opens their profile page, and sends them your connected DM template.
               </p>
               <ul style={{ paddingLeft: "16px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                <li>• **Case-Insensitive**: Matches whether comments are lowercase or uppercase (e.g. `java`, `JAVA` or `Java` all trigger outreach).</li>
                 <li>• **Deduplication Check**: The bot keeps track of commenter history. It will only send **one** trigger message per user, per post.</li>
                 <li>• **Stealth Speed**: A delay of 45-120 seconds will be enforced between comment-triggered DMs to keep your account safe.</li>
               </ul>

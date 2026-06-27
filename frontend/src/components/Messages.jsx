@@ -185,7 +185,7 @@ export default function Messages() {
                     boxShadow: tpl.is_active ? "0 4px 20px rgba(37, 99, 235, 0.08)" : "none",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="template-header-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>{tpl.name}</h4>
                       {tpl.is_active && (

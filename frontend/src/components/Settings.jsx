@@ -138,7 +138,7 @@ export default function Settings() {
           {/* Engine Mode selector */}
           <div className="form-group" style={{ background: "rgba(255, 255, 255, 0.02)", padding: "16px", borderRadius: "8px", border: "1px solid var(--border-color)" }}>
             <label className="form-label" style={{ fontWeight: "600", fontSize: "14px", marginBottom: "8px" }}>Messaging Engine Integration</label>
-            <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
+            <div className="settings-radio-group" style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", color: "var(--text-primary)" }}>
                 <input 
                   type="radio" 
@@ -206,7 +206,7 @@ export default function Settings() {
           )}
 
           {/* Base limits & delays */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="settings-2col-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <div className="form-group">
               <label className="form-label">Daily Message Limit</label>
               <input 
@@ -233,7 +233,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="settings-2col-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <div className="form-group">
               <label className="form-label">Max Delay (Seconds)</label>
               <input 
@@ -260,7 +260,7 @@ export default function Settings() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+          <div className="settings-2col-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
             <div className="form-group">
               <label className="form-label">Start Work Hour</label>
               <input 

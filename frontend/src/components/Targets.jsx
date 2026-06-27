@@ -182,8 +182,8 @@ export default function Targets() {
       {/* Main Table view */}
       <div className="glass-card">
         {/* Filtering Options */}
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
-          <div style={{ display: "flex", gap: "8px" }}>
+        <div className="targets-filter-row" style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+          <div className="filter-buttons" style={{ display: "flex", gap: "8px" }}>
             {["all", "pending", "sending", "sent", "failed"].map((status) => (
               <button 
                 key={status}
@@ -196,7 +196,7 @@ export default function Targets() {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: "12px" }}>
+          <div className="targets-search-row" style={{ display: "flex", gap: "12px" }}>
             <div style={{ position: "relative" }}>
               <input 
                 type="text" 
@@ -204,7 +204,7 @@ export default function Targets() {
                 placeholder="Search username..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ paddingLeft: "36px", width: "200px" }}
+                style={{ paddingLeft: "36px", minWidth: "160px" }}
               />
               <Search size={14} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
             </div>

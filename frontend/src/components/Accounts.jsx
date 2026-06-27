@@ -117,100 +117,99 @@ export default function Accounts() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {accounts.map((acc) => (
-              <div 
-                key={acc.id} 
-                className="glass-card" 
-                style={{ 
-                  padding: "16px 20px", 
-                  background: "var(--bg-secondary)", 
-                  display: "flex", 
-                  justifyContent: "space-between", 
-                  alignItems: "center" 
+              <div
+                key={acc.id}
+                className="glass-card"
+                style={{
+                  padding: "16px 20px",
+                  background: "var(--bg-secondary)",
                 }}
               >
-                <div>
-                  <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>@{acc.username}</h4>
-                  <div style={{ display: "flex", gap: "10px", marginTop: "6px", alignItems: "center" }}>
-                    {acc.status === "connected" && (
-                      <span className="badge badge-sent">
-                        <Check size={12} style={{ marginRight: "4px" }} /> Connected / Session Active
-                      </span>
+                <div className="account-card-inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h4 style={{ fontWeight: "600", fontSize: "16px", color: "var(--text-primary)" }}>@{acc.username}</h4>
+                    <div style={{ display: "flex", gap: "10px", marginTop: "6px", alignItems: "center" }}>
+                      {acc.status === "connected" && (
+                        <span className="badge badge-sent">
+                          <Check size={12} style={{ marginRight: "4px" }} /> Connected / Session Active
+                        </span>
+                      )}
+                      {acc.status === "connecting" && (
+                        <span className="badge badge-sending">
+                          <Loader2 size={12} className="animate-spin" style={{ marginRight: "4px" }} /> Verifying Session / Awaiting Login...
+                        </span>
+                      )}
+                      {acc.status === "disconnected" && (
+                        <span className="badge badge-pending">
+                          <Key size={12} style={{ marginRight: "4px" }} /> Authentication Required
+                        </span>
+                      )}
+                      {acc.status === "verification_needed" && (
+                        <span className="badge badge-failed">
+                          <ShieldAlert size={12} style={{ marginRight: "4px" }} /> Verification Needed
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="account-card-actions" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {acc.status !== "connected" && (
+                      <>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: "8px 12px", fontSize: "12px" }}
+                          onClick={() => handleTriggerLogin(acc.username)}
+                          disabled={loading}
+                        >
+                          Authenticate (Playwright)
+                        </button>
+
+                        <input
+                          type="file"
+                          id={`session-upload-${acc.username}`}
+                          accept=".json"
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              handleUploadSession(acc.username, file);
+                              e.target.value = "";
+                            }
+                          }}
+                        />
+                        <button
+                          className="btn btn-secondary"
+                          style={{
+                            padding: "8px 12px",
+                            fontSize: "12px",
+                            background: "var(--accent)",
+                            color: "white",
+                            border: "none"
+                          }}
+                          onClick={() => document.getElementById(`session-upload-${acc.username}`).click()}
+                          disabled={loading}
+                        >
+                          {loading ? "Verifying..." : "Upload Session JSON"}
+                        </button>
+                      </>
                     )}
                     {acc.status === "connecting" && (
-                      <span className="badge badge-sending">
-                        <Loader2 size={12} className="animate-spin" style={{ marginRight: "4px" }} /> Verifying Session / Awaiting Login...
-                      </span>
-                    )}
-                    {acc.status === "disconnected" && (
-                      <span className="badge badge-pending">
-                        <Key size={12} style={{ marginRight: "4px" }} /> Authentication Required
-                      </span>
-                    )}
-                    {acc.status === "verification_needed" && (
-                      <span className="badge badge-failed">
-                        <ShieldAlert size={12} style={{ marginRight: "4px" }} /> Verification Needed
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  {acc.status !== "connected" && (
-                    <>
-                      <button 
-                        className="btn btn-secondary" 
+                      <button
+                        className="btn btn-secondary"
                         style={{ padding: "8px 12px", fontSize: "12px" }}
-                        onClick={() => handleTriggerLogin(acc.username)}
-                        disabled={loading}
+                        onClick={() => handleForceConnected(acc.username)}
                       >
-                        Authenticate (Playwright)
+                        Force Verify
                       </button>
-                      
-                      <input
-                        type="file"
-                        id={`session-upload-${acc.username}`}
-                        accept=".json"
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files[0];
-                          if (file) {
-                            handleUploadSession(acc.username, file);
-                            e.target.value = "";
-                          }
-                        }}
-                      />
-                      <button 
-                        className="btn btn-secondary" 
-                        style={{
-                          padding: "8px 12px",
-                          fontSize: "12px",
-                          background: "var(--accent)",
-                          color: "white",
-                          border: "none"
-                        }}
-                        onClick={() => document.getElementById(`session-upload-${acc.username}`).click()}
-                        disabled={loading}
-                      >
-                        {loading ? "Verifying..." : "Upload Session JSON"}
-                      </button>
-                    </>
-                  )}
-                  {acc.status === "connecting" && (
-                    <button 
-                      className="btn btn-secondary" 
-                      style={{ padding: "8px 12px", fontSize: "12px" }}
-                      onClick={() => handleForceConnected(acc.username)}
+                    )}
+                    <button
+                      className="btn btn-danger"
+                      style={{ padding: "8px 12px" }}
+                      onClick={() => handleDeleteAccount(acc.username)}
                     >
-                      Force Verify
+                      <Trash2 size={14} />
                     </button>
-                  )}
-                  <button 
-                    className="btn btn-danger" 
-                    style={{ padding: "8px 12px" }}
-                    onClick={() => handleDeleteAccount(acc.username)}
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                  </div>
                 </div>
               </div>
             ))}

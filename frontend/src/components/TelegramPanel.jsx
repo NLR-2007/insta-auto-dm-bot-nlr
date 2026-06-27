@@ -40,7 +40,7 @@ export default function TelegramPanel() {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: "4px", marginBottom: "20px", background: "var(--bg-tertiary)", borderRadius: "10px", padding: "4px" }}>
+      <div className="tg-tab-bar">
         {tabs.map((tab) => (
           <button
             key={tab.id}

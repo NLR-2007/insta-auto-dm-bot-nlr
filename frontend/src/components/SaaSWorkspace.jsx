@@ -70,7 +70,7 @@ export default function SaaSWorkspace() {
   const activePlan = plans.find((p) => p.slug === workspace?.plan_slug);
 
   return (
-    <div className="content-grid" style={{ gridTemplateColumns: "1.1fr 0.9fr", gap: "20px" }}>
+    <div className="content-grid saas-workspace-grid">
       <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start" }}>
           <div>
@@ -87,7 +87,7 @@ export default function SaaSWorkspace() {
           </button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "12px" }}>
+        <div className="saas-stats-grid">
           <div className="stat-card">
             <span className="stat-label">Workspace</span>
             <strong className="stat-value" style={{ fontSize: "18px" }}>{workspace?.name || "Loading..."}</strong>
@@ -107,7 +107,7 @@ export default function SaaSWorkspace() {
             <ShieldCheck size={16} style={{ color: "var(--success)" }} />
             Current Plan Limits
           </h4>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px", marginTop: "12px" }}>
+          <div className="saas-limits-grid">
             {activePlan &&
               Object.entries(activePlan.limits).map(([key, value]) => (
                 <div key={key} style={{ background: "rgba(255,255,255,0.03)", borderRadius: "8px", padding: "10px" }}>

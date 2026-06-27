@@ -57,9 +57,9 @@ export default function TgBots() {
 
   return (
     <div className="tg-section">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+      <div className="tg-section-header">
         <h3 className="tg-section-title"><Bot size={18} /> Bot Management</h3>
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div className="tg-btn-group">
           <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setShowManual(!showManual)}>
             {showManual ? <><X size={13} /> Cancel</> : <><Hash size={13} /> Add Channel</>}
           </button>
@@ -76,7 +76,7 @@ export default function TgBots() {
           <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
             Get your bot token from <b>@BotFather</b> on Telegram.
           </p>
-          <form onSubmit={handleAdd} style={{ display: "flex", gap: "10px" }}>
+          <form onSubmit={handleAdd} className="tg-form-inline">
             <input
               type="text" value={token} onChange={(e) => setToken(e.target.value)}
               placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
@@ -94,7 +94,7 @@ export default function TgBots() {
           <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
             Enter the chat ID (e.g. <b>-1001234567890</b>) or username (e.g. <b>@mychannel</b>). Bot must be admin in the channel first.
           </p>
-          <form onSubmit={handleManualAdd} style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <form onSubmit={handleManualAdd} className="tg-form-inline">
             <select value={manualChat.botId} onChange={(e) => setManualChat({ ...manualChat, botId: e.target.value })} required style={{ minWidth: "150px" }}>
               <option value="">Select bot...</option>
               {bots.map((b) => <option key={b.id} value={b.id}>@{b.bot_username}</option>)}
@@ -115,7 +115,7 @@ export default function TgBots() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {bots.map((bot) => (
-            <div key={bot.id} className="glass-card" style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px" }}>
+            <div key={bot.id} className="glass-card tg-card-item">
               <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "rgba(14, 165, 233, 0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0EA5E9", flexShrink: 0 }}>
                 <Bot size={20} />
               </div>
@@ -123,7 +123,7 @@ export default function TgBots() {
                 <p style={{ fontWeight: 600 }}>@{bot.bot_username}</p>
                 <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>{bot.bot_name} &middot; {bot.channel_count} channel(s)</p>
               </div>
-              <div style={{ display: "flex", gap: "6px" }}>
+              <div className="tg-card-actions">
                 <button className="btn btn-secondary" style={{ padding: "6px 10px" }} onClick={() => handleRefresh(bot.id)} disabled={refreshing === bot.id}>
                   <RefreshCw size={13} className={refreshing === bot.id ? "animate-spin" : ""} />
                 </button>

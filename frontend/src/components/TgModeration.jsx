@@ -63,11 +63,13 @@ export default function TgModeration() {
 
   return (
     <div className="tg-section">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+      <div className="tg-section-header">
         <h3 className="tg-section-title"><Shield size={18} /> Moderation Rules</h3>
-        <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setShowForm(!showForm)}>
-          {showForm ? <><X size={13} /> Cancel</> : <><Plus size={13} /> Add Rule</>}
-        </button>
+        <div className="tg-btn-group">
+          <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? <><X size={13} /> Cancel</> : <><Plus size={13} /> Add Rule</>}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -118,7 +120,7 @@ export default function TgModeration() {
             const Icon = getRuleIcon(rule.rule_type);
             const config = parseConfig(rule.config);
             return (
-              <div key={rule.id} className="glass-card" style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", opacity: rule.is_active ? 1 : 0.5 }}>
+              <div key={rule.id} className="glass-card tg-card-item" style={{ opacity: rule.is_active ? 1 : 0.5 }}>
                 <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "rgba(14, 165, 233, 0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0EA5E9", flexShrink: 0 }}>
                   <Icon size={16} />
                 </div>
@@ -133,7 +135,7 @@ export default function TgModeration() {
                     {rule.rule_type === "welcome" && `Message: ${config.message || "none"}`}
                   </p>
                 </div>
-                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                <div className="tg-card-actions">
                   <button className="btn btn-secondary" style={{ padding: "6px 10px" }} onClick={() => handleToggle(rule.id)}>
                     {rule.is_active ? <ToggleRight size={16} color="var(--success)" /> : <ToggleLeft size={16} />}
                   </button>

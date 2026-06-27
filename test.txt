@@ -1,12 +1,16 @@
-#used to start automation
-venv\Scripts\python -m backend.run_bot
-
+# ── BACKEND (FastAPI) ──────────────────────────────────────────────
+# Option A: Use the batch file (recommended)
 .\run_backend.bat
 
-
-#used for frontend
+# Option B: Manual command
 venv\Scripts\python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
+# ── FRONTEND (React/Vite) ──────────────────────────────────────────
+cd frontend
+npm run dev
 
-#tunnel 
+# ── TUNNEL (ngrok) ────────────────────────────────────────────────
 ngrok http 8000
+
+# ── BOT AUTOMATION RUNNER ─────────────────────────────────────────
+venv\Scripts\python -m backend.run_bot

@@ -61,11 +61,13 @@ export default function TgSchedule() {
 
   return (
     <div className="tg-section">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+      <div className="tg-section-header">
         <h3 className="tg-section-title"><CalendarClock size={18} /> Scheduled Posts</h3>
-        <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setShowForm(!showForm)}>
-          {showForm ? <><X size={13} /> Cancel</> : <><Plus size={13} /> New Post</>}
-        </button>
+        <div className="tg-btn-group">
+          <button className="btn btn-primary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => setShowForm(!showForm)}>
+            {showForm ? <><X size={13} /> Cancel</> : <><Plus size={13} /> New Post</>}
+          </button>
+        </div>
       </div>
 
       {showForm && (

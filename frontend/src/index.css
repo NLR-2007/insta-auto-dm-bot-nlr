@@ -2965,4 +2965,142 @@ tr:hover td {
   margin: 0;
 }
 
+/* ---------- Mobile Responsiveness Enhancements (SaaS, Comments, Telegram) ---------- */
+
+/* SaaS workspace grid layouts */
+.saas-workspace-grid {
+  grid-template-columns: 1.1fr 0.9fr;
+}
+
+.saas-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.saas-limits-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* 2-column input layout in forms */
+.form-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Telegram Panel styles */
+.tg-tab-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.tg-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.tg-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.tg-card-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+}
+
+.tg-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.tg-form-inline {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Responsive Overrides */
+@media (max-width: 900px) {
+  .saas-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .saas-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .saas-limits-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row-2col {
+    grid-template-columns: 1fr;
+  }
+
+  .tg-tab-bar {
+    flex-wrap: wrap;
+  }
+  .tg-tab-bar button {
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .tg-section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .tg-section-header .tg-btn-group {
+    width: 100%;
+  }
+  .tg-section-header button,
+  .tg-section-header .tg-btn-group button {
+    flex: 1;
+    width: 100%;
+  }
+
+  .tg-form-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tg-form-inline select,
+  .tg-form-inline input,
+  .tg-form-inline button {
+    width: 100% !important;
+  }
+}
+
+@media (max-width: 500px) {
+  .tg-card-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .tg-card-item .tg-card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 400px) {
+  .tg-tab-bar button {
+    flex: 1 1 100%;
+  }
+}
+
+
 

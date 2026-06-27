@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from backend.database import get_db, Setting, MonitoredPost, ProcessedComment, OptOut, log_to_db, MessageTemplate
 from backend.bot import parse_spintax
+from backend.security import decrypt_secret, verify_meta_signature
 from typing import Dict, Any
 
 router = APIRouter(prefix="/api/webhooks", tags=["Meta Webhooks"])
@@ -19,7 +20,7 @@ async def verify_webhook(
     Verify Token must match the configured token in Settings.
     """
     token_setting = db.query(Setting).filter(Setting.key == "meta_verify_token").first()
-    expected_token = token_setting.value if token_setting else ""
+    expected_token = decrypt_secret(token_setting.value) if token_setting else ""
     
     if hub_mode == "subscribe" and hub_verify_token == expected_token:
         log_to_db("SUCCESS", "Official Meta webhook verified successfully!")
@@ -39,8 +40,14 @@ async def receive_webhook(request: Request, db: Session = Depends(get_db)):
     if not mode_setting or mode_setting.value != "official":
         return {"status": "ignored", "reason": "Official Meta API mode is not active"}
 
+    raw_body = await request.body()
+    if not verify_meta_signature(raw_body, request.headers.get("x-hub-signature-256")):
+        log_to_db("WARNING", "Rejected Meta webhook payload with invalid signature.")
+        raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
     try:
-        payload = await request.json()
+        import json
+        payload = json.loads(raw_body.decode("utf-8"))
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
@@ -81,12 +88,7 @@ async def process_incoming_comment(value: Dict[str, Any], db: Session):
     opt_out_keywords = [k.strip().lower() for k in (opt_out_setting.value if opt_out_setting else "").split(",") if k.strip()]
     
     if comment_text.lower() in opt_out_keywords:
-        # Add to blocklist automatically
-        exists = db.query(OptOut).filter(OptOut.username == commenter_username.lower()).first()
-        if not exists:
-            db.add(OptOut(username=commenter_username.lower()))
-            db.commit()
-            log_to_db("WARNING", f"[COMPLIANCE] Auto-blocked @{commenter_username} via opt-out comment.")
+        log_to_db("WARNING", f"[COMPLIANCE] Received opt-out keyword from @{commenter_username}; tenant-scoped blocklist requires matched post context.")
         return
 
     # 2. Query blocklist check
@@ -146,7 +148,7 @@ async def process_incoming_comment(value: Dict[str, Any], db: Session):
 
     # 6. Send message via official Graph API Page Access Token
     token_setting = db.query(Setting).filter(Setting.key == "meta_page_access_token").first()
-    page_access_token = token_setting.value if token_setting else ""
+    page_access_token = decrypt_secret(token_setting.value) if token_setting else ""
     
     if not page_access_token:
         log_to_db("ERROR", "Failed to send DM: Meta Page Access Token is not configured.")

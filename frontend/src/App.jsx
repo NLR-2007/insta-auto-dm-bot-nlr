@@ -5,65 +5,149 @@ import Targets from "./components/Targets";
 import Messages from "./components/Messages";
 import Settings from "./components/Settings";
 import CommentTriggers from "./components/CommentTriggers";
-import { getApiUrl, setApiUrl, apiFetch } from "./api";
-import { LayoutDashboard, UserCheck, Users, Mail, Settings as SettingsIcon, Link2, Check, RefreshCw, MessageSquare, Menu, X } from "lucide-react";
+import AdminPanel from "./components/AdminPanel";
+import AuthPage from "./components/AuthPage";
+import TelegramPanel from "./components/TelegramPanel";
+import LandingPage from "./components/LandingPage";
+import {
+  LayoutDashboard, UserCheck, Users, Mail,
+  Settings as SettingsIcon, MessageSquare, Menu, X,
+  Shield, LogOut, ChevronDown, Send
+} from "lucide-react";
+import { getToken, getAuthUser, logout, apiFetch } from "./api";
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [tunnelUrlInput, setTunnelUrlInput] = useState(getApiUrl());
-  const [isSaved, setIsSaved] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("checking");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState("checking");
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
 
-  const handleNavClick = (tab) => {
-    setActiveTab(tab);
-    setSidebarOpen(false);
-  };
+  // ── Check existing session on mount ──────────────────────────────────────────
+  useEffect(() => {
+    const token = getToken();
+    const user = getAuthUser();
+    if (token && user) {
+      setIsAuthenticated(true);
+      setCurrentUser(user);
+      verifyConnection();
+    }
+  }, []);
 
   const verifyConnection = async () => {
     setConnectionStatus("checking");
     try {
-      await apiFetch("/api/status");
+      await apiFetch("/");
       setConnectionStatus("active");
-    } catch (e) {
+    } catch {
       setConnectionStatus("error");
     }
   };
 
-  useEffect(() => {
+  const handleAuthSuccess = (data) => {
+    setCurrentUser({ username: data.username, is_admin: data.is_admin });
+    setIsAuthenticated(true);
     verifyConnection();
-  }, [tunnelUrlInput]);
-
-  const handleSaveTunnel = (e) => {
-    e.preventDefault();
-    setApiUrl(tunnelUrlInput);
-    setIsSaved(true);
-    verifyConnection();
-    setTimeout(() => setIsSaved(false), 2000);
+    setActiveTab("dashboard");
   };
+
+  const handleLogout = () => {
+    setUserMenuOpen(false);
+    logout();         // clears localStorage + reloads
+  };
+
+  const handleNavClick = (tab) => {
+    setActiveTab(tab);
+    setSidebarOpen(false);
+    setUserMenuOpen(false);
+  };
+
+  // ── Auth gate ────────────────────────────────────────────────────────────────
+  if (!isAuthenticated) {
+    if (showAuth) {
+      return (
+        <AuthPage
+          onAuthSuccess={handleAuthSuccess}
+          onBackToHome={() => setShowAuth(false)}
+        />
+      );
+    }
+    return <LandingPage onGetStarted={() => setShowAuth(true)} />;
+  }
+
+  // ── Nav items ────────────────────────────────────────────────────────────────
+  const navItems = [
+    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "accounts", label: "IG Accounts", icon: UserCheck },
+    { id: "targets", label: "Targets Queue", icon: Users },
+    { id: "messages", label: "DM Templates", icon: Mail },
+    { id: "comment-triggers", label: "Comment Triggers", icon: MessageSquare },
+    { id: "telegram", label: "Telegram", icon: Send, isTelegram: true },
+    { id: "settings", label: "Settings", icon: SettingsIcon },
+    ...(currentUser?.is_admin
+      ? [
+          { id: "admin", label: "Admin Panel", icon: Shield, isAdmin: true },
+        ]
+      : []),
+  ];
 
   const renderActiveComponent = () => {
     switch (activeTab) {
-      case "dashboard":
-        return <Dashboard />;
-      case "accounts":
-        return <Accounts />;
-      case "targets":
-        return <Targets />;
-      case "messages":
-        return <Messages />;
-      case "comment-triggers":
-        return <CommentTriggers />;
-      case "settings":
-        return <Settings />;
-      default:
-        return <Dashboard />;
+      case "dashboard":        return <Dashboard />;
+      case "accounts":         return <Accounts />;
+      case "targets":          return <Targets />;
+      case "messages":         return <Messages />;
+      case "comment-triggers": return <CommentTriggers />;
+      case "telegram":         return <TelegramPanel />;
+      case "settings":         return <Settings />;
+      case "admin":            return currentUser?.is_admin ? <AdminPanel /> : <Dashboard />;
+      default:                 return <Dashboard />;
     }
+  };
+
+  const pageTitle = () => {
+    const map = {
+      dashboard: "Dashboard",
+      accounts: "Instagram Accounts",
+      targets: "Targets Queue",
+      messages: "DM Templates",
+      "comment-triggers": "Comment Triggers",
+      telegram: "Telegram Automation",
+      settings: "Settings",
+      admin: "Admin Panel",
+    };
+    return map[activeTab] || activeTab;
+  };
+
+  const pageSubtitle = () => {
+    const map = {
+      dashboard: "Overview of your automation activity",
+      accounts: "Manage connected Instagram accounts",
+      targets: "Queue of users to send DMs to",
+      messages: "Create and manage message templates",
+      "comment-triggers": "Auto-DM users who comment on posts",
+      telegram: "Manage bots, schedule posts & moderate channels",
+      settings: "Configure bot behavior and limits",
+      admin: "System management & monitoring",
+    };
+    return map[activeTab] || "";
   };
 
   return (
     <div className="app-container">
-      {/* Mobile header */}
+      {/* SVG gradient helper (must stay for brand icon) */}
+      <svg width="0" height="0" style={{ position: "absolute" }}>
+        <defs>
+          <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#2563EB" />
+            <stop offset="100%" stopColor="#60A5FA" />
+          </linearGradient>
+        </defs>
+      </svg>
+
+      {/* ── Mobile header ─────────────────────────────────────────────────────── */}
       <div className="mobile-header">
         <div className="brand" style={{ fontSize: "16px" }}>
           <Mail size={20} style={{ stroke: "url(#brand-grad)" }} />
@@ -74,13 +158,13 @@ export default function App() {
         </button>
       </div>
 
-      {/* Sidebar overlay (mobile) */}
+      {/* ── Sidebar overlay (mobile) ───────────────────────────────────────────── */}
       <div
         className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`}
         onClick={() => setSidebarOpen(false)}
       />
 
-      {/* Sidebar */}
+      {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand">
           <Mail size={24} style={{ stroke: "url(#brand-grad)" }} />
@@ -88,128 +172,104 @@ export default function App() {
         </div>
 
         <nav className="nav-menu">
-          <div
-            className={`nav-item ${activeTab === "dashboard" ? "active" : ""}`}
-            onClick={() => handleNavClick("dashboard")}
-          >
-            <LayoutDashboard size={18} />
-            <span>Dashboard</span>
-          </div>
-
-          <div
-            className={`nav-item ${activeTab === "accounts" ? "active" : ""}`}
-            onClick={() => handleNavClick("accounts")}
-          >
-            <UserCheck size={18} />
-            <span>IG Accounts</span>
-          </div>
-
-          <div
-            className={`nav-item ${activeTab === "targets" ? "active" : ""}`}
-            onClick={() => handleNavClick("targets")}
-          >
-            <Users size={18} />
-            <span>Targets Queue</span>
-          </div>
-
-          <div
-            className={`nav-item ${activeTab === "messages" ? "active" : ""}`}
-            onClick={() => handleNavClick("messages")}
-          >
-            <Mail size={18} />
-            <span>DM Templates</span>
-          </div>
-
-          <div
-            className={`nav-item ${activeTab === "comment-triggers" ? "active" : ""}`}
-            onClick={() => handleNavClick("comment-triggers")}
-          >
-            <MessageSquare size={18} />
-            <span>Comment Triggers</span>
-          </div>
-
-          <div
-            className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
-            onClick={() => handleNavClick("settings")}
-          >
-            <SettingsIcon size={18} />
-            <span>Settings</span>
-          </div>
+          {navItems.map(({ id, label, icon: Icon, isAdmin, isTelegram }) => (
+            <React.Fragment key={id}>
+              {isTelegram && <div className="nav-separator"><span>TELEGRAM</span></div>}
+              <div
+                id={`nav-${id}`}
+                className={`nav-item ${activeTab === id ? "active" : ""} ${isAdmin ? "nav-item-admin" : ""} ${isTelegram ? "nav-item-telegram" : ""}`}
+                onClick={() => handleNavClick(id)}
+              >
+                <Icon size={18} />
+                <span>{label}</span>
+                {isAdmin && <span className="nav-admin-badge">ADMIN</span>}
+              </div>
+            </React.Fragment>
+          ))}
         </nav>
 
-        {/* Connection status footer */}
-        <div style={{ marginTop: "auto", borderTop: "1px solid var(--border-color)", paddingTop: "20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        {/* ── Sidebar footer ────────────────────────────────────────────────── */}
+        <div className="sidebar-footer">
+          {/* Connection dot */}
+          <div className="sidebar-connection">
             <div
+              className="connection-dot"
               style={{
-                width: "10px",
-                height: "10px",
-                borderRadius: "50%",
-                background: connectionStatus === "active" ? "var(--success)" : connectionStatus === "checking" ? "var(--warning)" : "var(--danger)"
+                background:
+                  connectionStatus === "active"
+                    ? "var(--success)"
+                    : connectionStatus === "checking"
+                    ? "var(--warning)"
+                    : "var(--danger)",
+                boxShadow:
+                  connectionStatus === "active"
+                    ? "0 0 6px var(--success)"
+                    : "none",
               }}
             />
-            <span style={{ fontSize: "12px", color: "var(--sidebar-text)", fontWeight: "500" }}>
-              {connectionStatus === "active" ? "Connected to Local API" : connectionStatus === "checking" ? "Checking connection..." : "Tunnel Link Offline"}
+            <span>
+              {connectionStatus === "active"
+                ? "API Connected"
+                : connectionStatus === "checking"
+                ? "Connecting..."
+                : "API Offline"}
             </span>
           </div>
+
+          {/* User menu */}
+          <div className="sidebar-user" onClick={() => setUserMenuOpen(!userMenuOpen)}>
+            <div className="sidebar-avatar">
+              {currentUser?.username?.[0]?.toUpperCase() || "U"}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p className="sidebar-username">{currentUser?.username}</p>
+              <p className="sidebar-role">
+                {currentUser?.is_admin ? "Administrator" : "User"}
+              </p>
+            </div>
+            <ChevronDown size={14} style={{ color: "var(--sidebar-text)", transition: "transform 0.2s", transform: userMenuOpen ? "rotate(180deg)" : "rotate(0deg)" }} />
+          </div>
+
+          {userMenuOpen && (
+            <div className="user-menu-popup">
+              <button id="logout-btn" className="user-menu-item danger" onClick={handleLogout}>
+                <LogOut size={14} />
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* Main Container */}
+      {/* ── Main Content ──────────────────────────────────────────────────────── */}
       <main className="main-content">
-        {/* Header bar */}
+        {/* Page header — no tunnel input visible to users */}
         <header className="page-header">
           <div>
-            <h1 className="page-title" style={{ textTransform: "capitalize" }}>
-              {activeTab === "messages" ? "DM Templates" : activeTab === "comment-triggers" ? "Comment Triggers" : activeTab === "accounts" ? "Instagram Accounts" : activeTab}
-            </h1>
-            <p className="page-subtitle">Manage automated Instagram messaging campaigns</p>
+            <h1 className="page-title">{pageTitle()}</h1>
+            <p className="page-subtitle">{pageSubtitle()}</p>
           </div>
 
-          {/* Quick Tunnel Setting */}
-          <form onSubmit={handleSaveTunnel} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <div style={{ position: "relative" }}>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder="Tunnel URL..." 
-                value={tunnelUrlInput}
-                onChange={(e) => setTunnelUrlInput(e.target.value)}
-                style={{ width: "260px", paddingLeft: "32px", height: "38px", fontSize: "13px" }}
-              />
-              <Link2 size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }} />
-            </div>
-            <button 
-              type="submit" 
-              className={`btn ${isSaved ? "btn-primary" : "btn-secondary"}`}
-              style={{ height: "38px", padding: "0 12px", fontSize: "13px" }}
-            >
-              {isSaved ? <Check size={14} /> : "Update Tunnel"}
+          {/* Compact user info chip (desktop) */}
+          <div className="header-user-chip">
+            <div className="chip-avatar">{currentUser?.username?.[0]?.toUpperCase()}</div>
+            <span>{currentUser?.username}</span>
+            {currentUser?.is_admin && (
+              <span className="chip-admin-badge">
+                <Shield size={10} /> Admin
+              </span>
+            )}
+            <button id="header-logout-btn" className="chip-logout-btn" onClick={handleLogout} title="Sign out">
+              <LogOut size={13} />
             </button>
-            <button 
-              type="button" 
-              className="btn btn-secondary" 
-              style={{ height: "38px", padding: "0 10px" }}
-              onClick={verifyConnection}
-            >
-              <RefreshCw size={14} />
-            </button>
-          </form>
+          </div>
         </header>
 
-        {/* Content Render */}
+        {/* Active view */}
         <div style={{ flex: 1 }}>
           {renderActiveComponent()}
         </div>
       </main>
-      
-      {/* Brand SVG gradient helper */}
-      <svg width="0" height="0">
-        <linearGradient id="brand-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#F97316" />
-          <stop offset="100%" stopColor="#FB923C" />
-        </linearGradient>
-      </svg>
     </div>
   );
 }

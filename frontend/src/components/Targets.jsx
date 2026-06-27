@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, getApiUrl, getToken } from "../api";
 import { Trash2, Upload, FileText, Search, X, Loader2, ArrowRight, UserCheck } from "lucide-react";
 
 export default function Targets() {
   const [targets, setTargets] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [accountId, setAccountId] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -12,8 +14,15 @@ export default function Targets() {
 
   const fetchTargets = async () => {
     try {
-      const data = await apiFetch("/api/targets");
+      const [data, accts] = await Promise.all([
+        apiFetch("/api/targets"),
+        apiFetch("/api/accounts"),
+      ]);
       setTargets(data);
+      setAccounts(accts);
+      if (!accountId && accts.length > 0) {
+        setAccountId(String(accts[0].id));
+      }
     } catch (e) {
       console.error("Failed to load targets:", e);
     }
@@ -25,13 +34,16 @@ export default function Targets() {
 
   const handleAddSingle = async (e) => {
     e.preventDefault();
-    if (!singleInput.trim()) return;
+    if (!singleInput.trim() || !accountId) {
+      alert("Please enter a username and select an account.");
+      return;
+    }
     setLoading(true);
     try {
       const handle = singleInput.trim().replace("@", "");
       await apiFetch("/api/targets", {
         method: "POST",
-        body: JSON.stringify({ usernames: [handle] }),
+        body: JSON.stringify({ usernames: [handle], account_id: parseInt(accountId) }),
       });
       setSingleInput("");
       fetchTargets();
@@ -44,17 +56,23 @@ export default function Targets() {
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file) return;
+    if (!file || !accountId) {
+      alert("Please select an account before uploading.");
+      return;
+    }
     setUploading(true);
-    
+
     const formData = new FormData();
     formData.append("file", file);
-    
-    // Custom fetch because apiFetch expects JSON headers by default
-    const baseUrl = localStorage.getItem("insta_api_url") || "http://localhost:8000";
+
+    const token = getToken();
     try {
-      const response = await fetch(`${baseUrl}/api/targets/upload`, {
+      const response = await fetch(`${getApiUrl()}/api/targets/upload?account_id=${accountId}`, {
         method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          "ngrok-skip-browser-warning": "69420",
+        },
         body: formData,
       });
       if (!response.ok) throw new Error("Upload failed");
@@ -65,7 +83,7 @@ export default function Targets() {
       alert(err.message || "Failed to upload file.");
     } finally {
       setUploading(false);
-      e.target.value = null; // Reset file input
+      e.target.value = null;
     }
   };
 
@@ -102,17 +120,31 @@ export default function Targets() {
         {/* Manual Add */}
         <div className="glass-card">
           <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "16px" }}>Add Single Target</h3>
+          <div className="form-group" style={{ marginBottom: "12px" }}>
+            <label className="form-label">Send From Account</label>
+            <select
+              className="form-input"
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              style={{ height: "42px" }}
+            >
+              <option value="">-- Select Account --</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>@{a.username} ({a.status})</option>
+              ))}
+            </select>
+          </div>
           <form onSubmit={handleAddSingle} style={{ display: "flex", gap: "10px" }}>
-            <input 
-              type="text" 
-              className="form-input" 
+            <input
+              type="text"
+              className="form-input"
               placeholder="Instagram Handle (e.g. michelle_photos)"
               value={singleInput}
               onChange={(e) => setSingleInput(e.target.value)}
               disabled={loading}
               style={{ flex: 1 }}
             />
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-primary" disabled={loading || !accountId}>
               Enqueue
             </button>
           </form>

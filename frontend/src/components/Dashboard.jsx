@@ -6,6 +6,8 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 export default function Dashboard() {
   const [status, setStatus] = useState({
     bot_running: false,
+    system_running: false,
+    user_automation_active: false,
     active_account: null,
     sent_today: 0,
     pending_count: 0,
@@ -102,41 +104,60 @@ export default function Dashboard() {
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <h2 style={{ fontSize: "20px", fontWeight: "700" }}>Execution Center</h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
-            {status.active_account 
-              ? `Currently running under account: @${status.active_account}` 
-              : "No account connected. Go to the Accounts section to connect one."}
+            {!status.system_running
+              ? "System is offline. An admin must start the system before you can automate."
+              : status.active_account
+                ? `Account: @${status.active_account}`
+                : "No account connected. Go to the Accounts section to connect one."}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div className={`status-indicator ${status.bot_running ? "running" : "stopped"}`}>
-            <span className="status-dot"></span>
-            {status.bot_running ? "SYSTEM ACTIVE" : "SYSTEM PAUSED"}
-          </div>
-          
-          {status.bot_running ? (
-            <button
-              className="btn btn-danger"
-              onClick={handleStopBot}
-              disabled={actionLoading}
-            >
-              {actionLoading ? (
-                <><Loader2 size={16} className="animate-spin" /> Stopping...</>
-              ) : (
-                <><Square size={16} /> Stop Bot</>
-              )}
-            </button>
+          {!status.system_running ? (
+            <>
+              <div className="status-indicator stopped">
+                <span className="status-dot"></span>
+                SYSTEM OFFLINE
+              </div>
+              <button className="btn btn-secondary" disabled title="Admin must start the system first">
+                <Play size={16} /> Waiting for Admin
+              </button>
+            </>
+          ) : status.user_automation_active ? (
+            <>
+              <div className="status-indicator running">
+                <span className="status-dot"></span>
+                YOUR AUTOMATION ACTIVE
+              </div>
+              <button
+                className="btn btn-danger"
+                onClick={handleStopBot}
+                disabled={actionLoading}
+              >
+                {actionLoading ? (
+                  <><Loader2 size={16} className="animate-spin" /> Stopping...</>
+                ) : (
+                  <><Square size={16} /> Stop My Automation</>
+                )}
+              </button>
+            </>
           ) : (
-            <button
-              className="btn btn-primary"
-              onClick={handleStartBot}
-              disabled={actionLoading || !status.active_account}
-            >
-              {actionLoading ? (
-                <><Loader2 size={16} className="animate-spin" /> Starting...</>
-              ) : (
-                <><Play size={16} /> Start Automation</>
-              )}
-            </button>
+            <>
+              <div className="status-indicator stopped">
+                <span className="status-dot"></span>
+                YOUR AUTOMATION PAUSED
+              </div>
+              <button
+                className="btn btn-primary"
+                onClick={handleStartBot}
+                disabled={actionLoading || !status.active_account}
+              >
+                {actionLoading ? (
+                  <><Loader2 size={16} className="animate-spin" /> Starting...</>
+                ) : (
+                  <><Play size={16} /> Start My Automation</>
+                )}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -175,7 +196,7 @@ export default function Dashboard() {
                     <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.06)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                 <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
                 <YAxis stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
                 <Tooltip 

@@ -181,12 +181,12 @@ export default function Accounts() {
                       />
                       <button 
                         className="btn btn-secondary" 
-                        style={{ 
-                          padding: "8px 12px", 
-                          fontSize: "12px", 
-                          background: "var(--accent-gradient)", 
-                          color: "white", 
-                          border: "none" 
+                        style={{
+                          padding: "8px 12px",
+                          fontSize: "12px",
+                          background: "var(--accent)",
+                          color: "white",
+                          border: "none"
                         }}
                         onClick={() => document.getElementById(`session-upload-${acc.username}`).click()}
                         disabled={loading}

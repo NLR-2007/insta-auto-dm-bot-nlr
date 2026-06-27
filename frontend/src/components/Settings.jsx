@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { apiFetch, getApiUrl, setApiUrl } from "../api";
-import { Save, AlertCircle, Link, Shield, Trash2, Plus, Lock, Key, CheckCircle } from "lucide-react";
+import { apiFetch } from "../api";
+import { Save, AlertCircle, Shield, Trash2, Plus, Key, CheckCircle } from "lucide-react";
+
 
 export default function Settings() {
   // Base settings
@@ -9,7 +10,7 @@ export default function Settings() {
   const [maxDelay, setMaxDelay] = useState(120);
   const [workingHoursStart, setWorkingHoursStart] = useState("08:00");
   const [workingHoursEnd, setWorkingHoursEnd] = useState("22:00");
-  const [tunnelUrl, setTunnelUrl] = useState(getApiUrl());
+  const [tunnelUrl] = useState(import.meta.env.VITE_API_URL || "http://localhost:8000");
   
   // Compliance Settings
   const [apiMode, setApiMode] = useState("sandbox"); // sandbox or official
@@ -80,8 +81,7 @@ export default function Settings() {
         }),
       });
 
-      // Save local storage API Tunnel URL
-      setApiUrl(tunnelUrl);
+      // Tunnel URL is configured via .env — no local update needed
       
       alert("All settings saved successfully!");
       fetchSettings();
@@ -157,7 +157,7 @@ export default function Settings() {
                   checked={apiMode === "official"} 
                   onChange={() => setApiMode("official")} 
                 />
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "#FB923C" }}>Official Meta API Mode (Compliant)</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "#2563EB" }}>Official Meta API Mode (Compliant)</span>
               </label>
             </div>
             <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "10px", lineHeight: "1.4" }}>
@@ -170,8 +170,8 @@ export default function Settings() {
 
           {/* Conditional Meta Developer settings */}
           {apiMode === "official" && (
-            <div className="form-group" style={{ padding: "16px", background: "rgba(249, 115, 22, 0.05)", borderRadius: "8px", border: "1px dashed #F97316", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <h4 style={{ fontSize: "13px", fontWeight: "600", color: "#F97316", display: "flex", gap: "6px", alignItems: "center" }}>
+            <div className="form-group" style={{ padding: "16px", background: "#EFF6FF", borderRadius: "8px", border: "1px dashed #BFDBFE", display: "flex", flexDirection: "column", gap: "12px" }}>
+              <h4 style={{ fontSize: "13px", fontWeight: "600", color: "#0F172A", display: "flex", gap: "6px", alignItems: "center" }}>
                 <Key size={14} /> Meta Developer Integration API Keys
               </h4>
               
@@ -200,7 +200,7 @@ export default function Settings() {
               </div>
 
               <span style={{ fontSize: "11px", color: "var(--text-muted)", lineHeight: "1.4" }}>
-                Set your Meta Developer App Webhook callback URL to: <code style={{ color: "#F97316" }}>{tunnelUrl ? `${tunnelUrl}/api/webhooks/instagram` : "[configure tunnel url below]"}</code>
+                Set your Meta Developer App Webhook callback URL to: <code style={{ color: "#0F172A", fontWeight: 600 }}>{tunnelUrl ? `${tunnelUrl}/api/webhooks/instagram` : "[configure tunnel url below]"}</code>
               </span>
             </div>
           )}
@@ -303,25 +303,11 @@ export default function Settings() {
             </span>
           </div>
 
-          {/* Tunnel settings */}
-          <div className="form-group">
-            <label className="form-label" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-              <Link size={14} /> Backend Tunnel URL (Ngrok / Cloudflare)
-            </label>
-            <input 
-              type="text" 
-              className="form-input" 
-              placeholder="e.g. https://your-tunnel-subdomain.ngrok-free.app" 
-              value={tunnelUrl}
-              onChange={(e) => setTunnelUrl(e.target.value)}
-              required
-            />
-          </div>
 
           <button 
             type="submit" 
             className="btn btn-primary" 
-            style={{ marginTop: "8px", background: "var(--accent-gradient)" }}
+            style={{ marginTop: "8px" }}
             disabled={loading}
           >
             <Save size={16} /> Save Configuration
@@ -400,7 +386,7 @@ export default function Settings() {
         {/* Safety Notice Panel */}
         <div className="glass-card" style={{ height: "fit-content" }}>
           <h4 style={{ fontSize: "15px", fontWeight: "600", color: "var(--text-primary)", display: "flex", gap: "8px", alignItems: "center" }}>
-            <AlertCircle size={18} style={{ color: "#FB923C" }} /> GDPR & Compliance Recommendations
+            <AlertCircle size={18} style={{ color: "#64748B" }} /> GDPR & Compliance Recommendations
           </h4>
           <div style={{ color: "var(--text-secondary)", fontSize: "13px", marginTop: "12px", display: "flex", flexDirection: "column", gap: "14px", lineHeight: "1.6" }}>
             <p>

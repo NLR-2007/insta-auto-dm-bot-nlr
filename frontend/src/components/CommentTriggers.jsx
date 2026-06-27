@@ -5,25 +5,32 @@ import { Plus, Trash2, Link, FileText, CheckCircle2, XCircle, Loader2, Sparkles,
 export default function CommentTriggers() {
   const [monitors, setMonitors] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [history, setHistory] = useState([]);
-  
+
   const [postUrl, setPostUrl] = useState("");
   const [keyword, setKeyword] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [accountId, setAccountId] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
 
   const fetchData = async () => {
     setFetching(true);
     try {
-      const postsData = await apiFetch("/api/posts");
+      const [postsData, templatesData, accountsData, historyData] = await Promise.all([
+        apiFetch("/api/posts"),
+        apiFetch("/api/messages"),
+        apiFetch("/api/accounts"),
+        apiFetch("/api/history"),
+      ]);
       setMonitors(postsData);
-      
-      const templatesData = await apiFetch("/api/messages");
       setTemplates(templatesData);
-      
-      const historyData = await apiFetch("/api/history");
+      setAccounts(accountsData);
       setHistory(historyData);
+      if (!accountId && accountsData.length > 0) {
+        setAccountId(String(accountsData[0].id));
+      }
     } catch (e) {
       console.error("Failed to load comment triggers data:", e);
     } finally {
@@ -39,8 +46,8 @@ export default function CommentTriggers() {
 
   const handleAddMonitor = async (e) => {
     e.preventDefault();
-    if (!postUrl.trim() || !keyword.trim() || !templateId) {
-      alert("Please fill in all trigger details.");
+    if (!postUrl.trim() || !keyword.trim() || !templateId || !accountId) {
+      alert("Please fill in all trigger details and select an account.");
       return;
     }
     setLoading(true);
@@ -51,6 +58,7 @@ export default function CommentTriggers() {
           post_url: postUrl.trim(),
           trigger_keyword: keyword.trim(),
           template_id: parseInt(templateId),
+          account_id: parseInt(accountId),
           is_active: true
         })
       });
@@ -118,33 +126,50 @@ export default function CommentTriggers() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
               <div className="form-group">
                 <label className="form-label">Trigger Word / Letter</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. INFO or C" 
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. INFO or C"
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   disabled={loading}
                   required
                 />
               </div>
-              
+
               <div className="form-group">
-                <label className="form-label">Connect DM Template</label>
-                <select 
+                <label className="form-label">Instagram Account</label>
+                <select
                   className="form-input"
-                  value={templateId}
-                  onChange={(e) => setTemplateId(e.target.value)}
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
                   disabled={loading}
                   required
                   style={{ height: "45px" }}
                 >
-                  <option value="">-- Choose Template --</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                  <option value="">-- Select Account --</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>@{a.username} ({a.status})</option>
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Connect DM Template</label>
+              <select
+                className="form-input"
+                value={templateId}
+                onChange={(e) => setTemplateId(e.target.value)}
+                disabled={loading}
+                required
+                style={{ height: "45px" }}
+              >
+                <option value="">-- Choose Template --</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             </div>
             
             <button 

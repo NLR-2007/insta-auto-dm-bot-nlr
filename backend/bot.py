@@ -4,11 +4,13 @@ import random
 import time
 import asyncio
 from datetime import datetime, date
+from typing import Optional
 import threading
 from playwright.async_api import async_playwright, Page, BrowserContext
 from sqlalchemy.orm import Session
-from backend.database import SessionLocal, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, MonitoredPost, ProcessedComment
+from backend.database import SessionLocal, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, MonitoredPost, ProcessedComment, OptOut, User
 from backend.config import settings
+from backend.security import decrypt_secret
 
 # Global running state flag
 BOT_RUNNING = False
@@ -34,13 +36,14 @@ async def human_type(locator, text: str):
         await asyncio.sleep(random.uniform(0.01, 0.05))
 
 class InstagramBot:
-    def __init__(self, account_username: str):
+    def __init__(self, account_username: str, proxy: Optional[dict] = None):
         self.username = account_username
         self.user_data_dir = os.path.abspath(os.path.join(settings.USER_DATA_DIR, account_username))
         os.makedirs(self.user_data_dir, exist_ok=True)
         self.playwright = None
         self.context = None
         self.page = None
+        self.proxy = proxy
 
     async def init_browser(self, headless: bool = False) -> BrowserContext:
         """Initializes persistent browser context."""
@@ -72,6 +75,7 @@ class InstagramBot:
             headless=headless,
             user_agent=user_agent,
             viewport={"width": 1280, "height": 720},
+            proxy=self.proxy,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
@@ -205,7 +209,9 @@ class InstagramBot:
 
     async def send_direct_message(self, target_username: str, message: str) -> bool:
         """Sends a direct message to a target username.
-        Tries profile Message button, then three dots menu, then Direct inbox search as fallback."""
+        Strategy 1: Profile 'Message' button (public/following accounts).
+        Strategy 2: Three dots ... -> 'Send message' (private accounts).
+        Strategy 3: Direct inbox compose (last resort fallback)."""
         if not self.page:
             raise Exception("Browser not initialized.")
 
@@ -217,35 +223,46 @@ class InstagramBot:
                 log_to_db("WARNING", f"Navigation to profile timed out or failed, continuing: {str(goto_err)}")
             await asyncio.sleep(random.uniform(3.0, 5.0))
 
-            # Check if profile is unavailable
             body_text = await self.page.inner_text("body")
             if "Sorry, this page isn't available" in body_text or "Page Not Found" in body_text:
                 raise Exception("Profile not found or page unavailable.")
 
             dm_ready = False
+            strategy1_clicked = False
 
-            # Strategy 1: Click Message button on profile
+            # Strategy 1: Click 'Message' button on profile (public / already-following)
             message_button = await self._find_message_button()
             if message_button:
                 log_to_db("INFO", "Clicking 'Message' button on profile...")
                 await message_button.click()
+                strategy1_clicked = True
                 await asyncio.sleep(random.uniform(4.0, 6.0))
+                await self._dismiss_popups()
                 dm_ready = await self._check_dm_input_exists()
                 if not dm_ready:
-                    log_to_db("WARNING", "Message button clicked but DM input did not appear (likely a private account).")
+                    log_to_db("WARNING", "Message button clicked but DM input did not appear.")
 
-            # Strategy 2: Three dots menu → Send message
+            # Strategy 2: Three dots menu -> 'Send message' (works for private accounts)
             if not dm_ready:
-                log_to_db("INFO", f"Trying three dots menu for @{target_username}...")
+                if strategy1_clicked:
+                    log_to_db("INFO", f"Re-navigating to @{target_username}'s profile for three dots approach...")
+                    try:
+                        await self.page.goto(f"https://www.instagram.com/{target_username}/", wait_until="domcontentloaded", timeout=25000)
+                    except Exception:
+                        pass
+                    await asyncio.sleep(random.uniform(3.0, 5.0))
+                log_to_db("INFO", f"Trying three dots menu -> Send message for @{target_username}...")
                 if await self._send_via_three_dots_menu():
                     dm_ready = await self._check_dm_input_exists()
 
-            # Strategy 3: Direct inbox search (most reliable for private accounts)
+            # Strategy 3: Direct inbox compose (last resort)
             if not dm_ready:
-                log_to_db("INFO", f"Falling back to Direct inbox to reach @{target_username}...")
-                await self._send_via_direct_inbox(target_username)
+                log_to_db("INFO", f"Falling back to Direct inbox compose for @{target_username}...")
+                dm_ready = await self._send_via_direct_inbox(target_username)
 
-            # At this point we should be in the DM thread — find the message input
+            if not dm_ready:
+                raise Exception(f"Could not open DM thread with @{target_username} via any method.")
+
             await self._type_and_send_message(target_username, message)
             return True
         except Exception as e:
@@ -253,13 +270,13 @@ class InstagramBot:
             raise e
 
     async def _find_message_button(self):
-        """Finds the Message button on a profile page."""
+        """Finds the Message button on a profile page. Uses exact text match to avoid
+        false-matching 'Messages' nav link or 'Send message' menu items."""
         selectors = [
             "//div[text()='Message']",
             "//button[text()='Message']",
-            "button:has-text('Message')",
-            "div[role='button']:has-text('Message')",
-            "a:has-text('Message')"
+            'button:text-is("Message")',
+            'div[role="button"]:text-is("Message")',
         ]
 
         for sel in selectors:
@@ -300,19 +317,19 @@ class InstagramBot:
         return False
 
     async def _send_via_three_dots_menu(self) -> bool:
-        """Clicks the three dots (⋯) menu on a profile page and selects 'Send message'."""
+        """Clicks the three dots (...) menu on a profile page and selects 'Send message'.
+        This is the primary method for private accounts."""
         try:
-            # Find the three dots button on the profile
             dots_button = None
             dots_selectors = [
                 'svg[aria-label="Options"]',
                 'button:has(svg[aria-label="Options"])',
                 'div[role="button"]:has(svg[aria-label="Options"])',
-                # The ⋯ button is often near the username, look for it
-                'button:has(svg[aria-label="More options"])',
                 'svg[aria-label="More options"]',
+                'button:has(svg[aria-label="More options"])',
+                'div[role="button"]:has(svg[aria-label="More options"])',
             ]
-            
+
             for sel in dots_selectors:
                 loc = self.page.locator(sel)
                 if await loc.count() > 0:
@@ -323,29 +340,27 @@ class InstagramBot:
                             break
                 if dots_button:
                     break
-            
+
             if not dots_button:
                 log_to_db("WARNING", "Three dots menu button not found on profile.")
                 return False
-            
-            log_to_db("INFO", "Clicking three dots (⋯) menu...")
+
+            log_to_db("INFO", "Clicking three dots (...) menu...")
             await dots_button.click()
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-            
-            # Now look for "Send message" in the dropdown menu
+            await asyncio.sleep(random.uniform(2.0, 3.5))
+
             send_msg_btn = None
             send_selectors = [
                 "//button[text()='Send message']",
+                "//button[text()='Send Message']",
                 "//div[text()='Send message']",
                 "//span[text()='Send message']",
-                "//button[contains(text(),'Send message')]",
                 'button:has-text("Send message")',
                 'div[role="button"]:has-text("Send message")',
-                # Also try lowercase
-                "//button[text()='Send Message']",
                 'button:has-text("Send Message")',
+                'div[role="button"]:has-text("Send Message")',
             ]
-            
+
             for sel in send_selectors:
                 loc = self.page.locator(sel)
                 if await loc.count() > 0:
@@ -356,143 +371,280 @@ class InstagramBot:
                             break
                 if send_msg_btn:
                     break
-            
+
             if not send_msg_btn:
-                log_to_db("WARNING", "'Send message' option not found in three dots menu.")
-                # Close the menu by pressing Escape
+                log_to_db("WARNING", "'Send message' not found in three dots menu.")
                 await self.page.keyboard.press("Escape")
                 await asyncio.sleep(1.0)
                 return False
-            
+
             log_to_db("INFO", "Clicking 'Send message' from three dots menu...")
             await send_msg_btn.click()
             await asyncio.sleep(random.uniform(4.0, 6.0))
+            await self._dismiss_popups()
             return True
-            
+
         except Exception as e:
             log_to_db("WARNING", f"Three dots menu approach failed: {e}")
             return False
 
-    async def _send_via_direct_inbox(self, target_username: str):
-        """Navigates to Direct inbox, creates a new message, and searches for the target user."""
+    async def _send_via_direct_inbox(self, target_username: str) -> bool:
+        """Navigates to Direct inbox, composes a new message, and searches for the target user.
+        This is the most reliable method for private accounts."""
         try:
-            await self.page.goto("https://www.instagram.com/direct/new/", wait_until="domcontentloaded", timeout=25000)
-        except Exception as goto_err:
-            log_to_db("WARNING", f"Navigation to direct inbox timed out or failed, continuing: {str(goto_err)}")
-        await asyncio.sleep(random.uniform(3.0, 5.0))
-        
-        # Look for the search/recipient input field
-        search_input = None
-        search_selectors = [
-            'input[placeholder="Search..."]',
-            'input[placeholder="Search…"]',
-            'input[name="queryBox"]',
-            'input[type="text"]',
-        ]
-        
-        for sel in search_selectors:
-            loc = self.page.locator(sel)
-            if await loc.count() > 0:
-                for i in range(await loc.count()):
-                    item = loc.nth(i)
-                    if await item.is_visible():
-                        search_input = item
-                        break
-            if search_input:
-                break
-        
-        if not search_input:
-            raise Exception("Could not find recipient search input in Direct inbox.")
-        
-        # Type the username to search
-        log_to_db("INFO", f"Searching for @{target_username} in Direct inbox...")
-        await search_input.click()
-        await asyncio.sleep(0.5)
-        await human_type(search_input, target_username)
-        await asyncio.sleep(random.uniform(2.0, 4.0))
-        
-        # Click on the matching user from search results
-        # Instagram shows results as clickable items with the username text
-        user_result = None
-        result_selectors = [
-            f'//span[contains(text(), "{target_username}")]',
-            f'//div[contains(text(), "{target_username}")]',
-            f'button:has-text("{target_username}")',
-            f'div[role="button"]:has-text("{target_username}")',
-        ]
-        
-        for sel in result_selectors:
-            loc = self.page.locator(sel)
-            if await loc.count() > 0:
-                for i in range(await loc.count()):
-                    item = loc.nth(i)
-                    if await item.is_visible():
-                        user_result = item
-                        break
-            if user_result:
-                break
-        
-        if not user_result:
-            raise Exception(f"User @{target_username} not found in Direct inbox search results.")
-        
-        await user_result.click()
-        await asyncio.sleep(random.uniform(1.5, 2.5))
-        
-        # Click the "Chat" or "Next" button to open the conversation
-        next_btn = None
-        next_selectors = [
-            "//div[text()='Chat']",
-            "//button[text()='Chat']",
-            "//div[text()='Next']",
-            "//button[text()='Next']",
-            "div[role='button']:has-text('Chat')",
-            "div[role='button']:has-text('Next')",
-        ]
-        
-        for sel in next_selectors:
-            loc = self.page.locator(sel)
-            if await loc.count() > 0:
-                for i in range(await loc.count()):
-                    item = loc.nth(i)
-                    if await item.is_visible():
-                        next_btn = item
-                        break
-            if next_btn:
-                break
-        
-        if next_btn:
-            await next_btn.click()
+            # Step 1: Navigate to the direct inbox
+            log_to_db("INFO", "Navigating to Direct inbox...")
+            try:
+                await self.page.goto("https://www.instagram.com/direct/inbox/", wait_until="domcontentloaded", timeout=25000)
+            except Exception:
+                pass
             await asyncio.sleep(random.uniform(3.0, 5.0))
-        else:
-            log_to_db("WARNING", "No 'Chat'/'Next' button found, proceeding anyway...")
-            await asyncio.sleep(2.0)
+            await self._dismiss_popups()
+
+            # Step 2: Click the "New message" / compose button (pencil icon)
+            compose_btn = None
+            compose_selectors = [
+                'svg[aria-label="New message"]',
+                'div[role="button"]:has(svg[aria-label="New message"])',
+                'a[href="/direct/new/"]',
+                'svg[aria-label="New Message"]',
+                'div[role="button"]:has(svg[aria-label="New Message"])',
+                'button:has(svg[aria-label="New message"])',
+                'button:has(svg[aria-label="New Message"])',
+                # Compose pencil icon - sometimes aria-label differs
+                'svg[aria-label="Compose"]',
+                'div[role="button"]:has(svg[aria-label="Compose"])',
+            ]
+            for sel in compose_selectors:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0:
+                    for i in range(await loc.count()):
+                        item = loc.nth(i)
+                        if await item.is_visible():
+                            compose_btn = item
+                            break
+                if compose_btn:
+                    break
+
+            if compose_btn:
+                log_to_db("INFO", "Clicking 'New message' compose button...")
+                await compose_btn.click()
+                await asyncio.sleep(random.uniform(2.0, 3.0))
+            else:
+                # Fallback: try navigating directly to /direct/new/
+                log_to_db("INFO", "Compose button not found, navigating to /direct/new/ ...")
+                try:
+                    await self.page.goto("https://www.instagram.com/direct/new/", wait_until="domcontentloaded", timeout=25000)
+                except Exception:
+                    pass
+                await asyncio.sleep(random.uniform(3.0, 5.0))
+
+            await self._dismiss_popups()
+
+            # Step 3: Find the "To:" / search input field for recipients
+            search_input = None
+            search_selectors = [
+                'input[placeholder="Search..."]',
+                'input[placeholder="Search…"]',
+                'input[placeholder*="Search"]',
+                'input[name="queryBox"]',
+                'input[aria-label*="Search"]',
+                'input[aria-label*="search"]',
+            ]
+            for sel in search_selectors:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0:
+                    for i in range(await loc.count()):
+                        item = loc.nth(i)
+                        if await item.is_visible():
+                            search_input = item
+                            break
+                if search_input:
+                    break
+
+            # If no search input found, try any visible text input in a dialog
+            if not search_input:
+                dialog_inputs = self.page.locator('div[role="dialog"] input[type="text"]')
+                if await dialog_inputs.count() > 0:
+                    for i in range(await dialog_inputs.count()):
+                        if await dialog_inputs.nth(i).is_visible():
+                            search_input = dialog_inputs.nth(i)
+                            break
+
+            if not search_input:
+                log_to_db("ERROR", "Could not find recipient search input in Direct inbox compose.")
+                return False
+
+            # Step 4: Type the username to search
+            log_to_db("INFO", f"Searching for @{target_username} in Direct compose...")
+            await search_input.click()
+            await asyncio.sleep(0.5)
+            await search_input.fill("")
+            await asyncio.sleep(0.3)
+            await human_type(search_input, target_username)
+            await asyncio.sleep(random.uniform(3.0, 5.0))
+
+            # Step 5: Click on the matching user from search results
+            # Instagram shows results as a list - we need to click the right one
+            # The result items typically contain the username in a span and may have a checkbox/radio
+            user_clicked = False
+
+            # Try clicking a result item that contains the username text
+            result_selectors = [
+                f'div[role="dialog"] span:text-is("{target_username}")',
+                f'div[role="dialog"] span:text("{target_username}")',
+                f'div[role="dialog"] button:has-text("{target_username}")',
+                f'div[role="dialog"] div[role="button"]:has-text("{target_username}")',
+                f'div[role="listbox"] div:has-text("{target_username}")',
+                f'//span[translate(text(),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")="{target_username.lower()}"]',
+                f'span:text-is("{target_username}")',
+            ]
+
+            for sel in result_selectors:
+                try:
+                    loc = self.page.locator(sel)
+                    if await loc.count() > 0:
+                        for i in range(await loc.count()):
+                            item = loc.nth(i)
+                            if await item.is_visible():
+                                await item.click()
+                                user_clicked = True
+                                log_to_db("INFO", f"Selected @{target_username} from search results.")
+                                break
+                except Exception:
+                    continue
+                if user_clicked:
+                    break
+
+            # Fallback: click the first visible result row in the dialog
+            if not user_clicked:
+                log_to_db("INFO", "Trying to click first search result row...")
+                try:
+                    # Instagram search results are typically in a scrollable div with clickable rows
+                    result_rows = self.page.locator('div[role="dialog"] div[role="none"], div[role="dialog"] label, div[role="dialog"] div[style*="cursor: pointer"]')
+                    if await result_rows.count() > 0:
+                        for i in range(await result_rows.count()):
+                            row = result_rows.nth(i)
+                            row_text = await row.inner_text()
+                            if target_username.lower() in row_text.lower():
+                                await row.click()
+                                user_clicked = True
+                                log_to_db("INFO", f"Clicked result row containing @{target_username}.")
+                                break
+                except Exception as e:
+                    log_to_db("WARNING", f"Result row click fallback failed: {e}")
+
+            if not user_clicked:
+                log_to_db("ERROR", f"User @{target_username} not found in Direct compose search results.")
+                return False
+
+            await asyncio.sleep(random.uniform(1.5, 2.5))
+
+            # Step 6: Click "Chat" or "Next" button to open the conversation
+            next_btn = None
+            next_selectors = [
+                "//div[text()='Chat']",
+                "//button[text()='Chat']",
+                "//div[text()='Next']",
+                "//button[text()='Next']",
+                "div[role='button']:has-text('Chat')",
+                "div[role='button']:has-text('Next')",
+                "div[role='dialog'] div[role='button']:has-text('Chat')",
+                "div[role='dialog'] div[role='button']:has-text('Next')",
+            ]
+
+            for sel in next_selectors:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0:
+                    for i in range(await loc.count()):
+                        item = loc.nth(i)
+                        if await item.is_visible():
+                            next_btn = item
+                            break
+                if next_btn:
+                    break
+
+            if next_btn:
+                log_to_db("INFO", "Clicking 'Chat'/'Next' to open conversation...")
+                await next_btn.click()
+                await asyncio.sleep(random.uniform(3.0, 5.0))
+            else:
+                log_to_db("WARNING", "No 'Chat'/'Next' button found after selecting user, proceeding...")
+                await asyncio.sleep(2.0)
+
+            await self._dismiss_popups()
+
+            # Step 7: Confirm DM input is ready
+            dm_ready = await self._check_dm_input_exists()
+            if dm_ready:
+                log_to_db("INFO", "DM input ready via Direct inbox compose.")
+                return True
+
+            # Sometimes Instagram shows a "Send message request" confirmation for private accounts
+            # Check for and accept any confirmation dialog
+            confirm_selectors = [
+                'button:has-text("Send message")',
+                'button:has-text("Send Message")',
+                'div[role="button"]:has-text("Send message")',
+                'button:has-text("OK")',
+                'button:has-text("Got it")',
+            ]
+            for sel in confirm_selectors:
+                loc = self.page.locator(sel)
+                if await loc.count() > 0:
+                    for i in range(await loc.count()):
+                        item = loc.nth(i)
+                        if await item.is_visible():
+                            await item.click()
+                            log_to_db("INFO", "Accepted message request confirmation dialog.")
+                            await asyncio.sleep(2.0)
+                            break
+                    break
+
+            dm_ready = await self._check_dm_input_exists()
+            if dm_ready:
+                return True
+
+            log_to_db("WARNING", "DM input still not found after Direct inbox compose flow.")
+            return False
+
+        except Exception as e:
+            log_to_db("ERROR", f"Direct inbox compose approach failed: {e}")
+            return False
 
     async def _type_and_send_message(self, target_username: str, message: str):
         """Finds the DM input box, types the message, and sends it."""
-        
-        # First, dismiss any popups that might be blocking (e.g. "Turn on notifications")
+
         await self._dismiss_popups()
-        
+
         dm_input_selectors = [
             'div[contenteditable="true"][aria-label="Message"]',
             'div[contenteditable="true"][aria-placeholder*="Message"]',
             'div[contenteditable="true"][role="textbox"]',
             'div[aria-placeholder*="Message"]',
             'div[role="textbox"]',
-            'div[contenteditable="true"]',
             'textarea[placeholder*="Message"]',
             'textarea[placeholder*="message"]',
             'p[placeholder*="Message"]',
+            'div[contenteditable="true"]',
         ]
-        
+
         input_box = None
-        for attempt in range(5):
+        for attempt in range(6):
             for sel in dm_input_selectors:
                 loc = self.page.locator(sel)
                 count = await loc.count()
                 for i in range(count):
                     item = loc.nth(i)
                     if await item.is_visible():
+                        # Avoid matching the "To:" search field in compose dialog
+                        aria = await item.get_attribute("aria-label") or ""
+                        placeholder = await item.get_attribute("aria-placeholder") or await item.get_attribute("placeholder") or ""
+                        tag = await item.evaluate("el => el.tagName.toLowerCase()")
+                        if "search" in aria.lower() or "search" in placeholder.lower():
+                            continue
+                        if tag == "input":
+                            continue
                         input_box = item
                         break
                 if input_box:
@@ -501,26 +653,37 @@ class InstagramBot:
             if input_box:
                 break
 
-            log_to_db("INFO", f"DM input not found yet (attempt {attempt + 1}/5). Waiting...")
+            log_to_db("INFO", f"DM input not found yet (attempt {attempt + 1}/6). Dismissing popups and waiting...")
             await self._dismiss_popups()
-            await asyncio.sleep(random.uniform(3.0, 5.0))
-                
+
+            # Also try accepting any "message request" prompt
+            try:
+                for confirm_sel in ['button:has-text("Send message")', 'button:has-text("OK")', 'button:has-text("Got it")']:
+                    btn = self.page.locator(confirm_sel)
+                    if await btn.count() > 0 and await btn.first.is_visible():
+                        await btn.first.click()
+                        log_to_db("INFO", "Accepted a confirmation prompt while waiting for DM input.")
+                        await asyncio.sleep(2.0)
+                        break
+            except Exception:
+                pass
+
+            await asyncio.sleep(random.uniform(2.5, 4.0))
+
         if not input_box:
             raise Exception("Direct message input field not found.")
-            
+
         log_to_db("INFO", f"Typing message to {target_username}...")
         await input_box.click()
         await asyncio.sleep(1.0)
-        
-        # Type message
+
         await human_type(input_box, message)
         await asyncio.sleep(random.uniform(1.0, 2.0))
-        
-        # Press Enter to send
+
         log_to_db("INFO", "Sending message...")
         await self.page.keyboard.press("Enter")
         await asyncio.sleep(3.0)
-        
+
         log_to_db("SUCCESS", f"Message successfully sent to {target_username}!")
 
     async def _dismiss_popups(self):
@@ -575,8 +738,9 @@ class InstagramBot:
         except Exception as e:
             log_to_db("WARNING", f"Failed random activity: {e}")
 
-    async def scrape_post_comments(self, post_url: str, trigger_keyword: str) -> list:
-        """Navigates to post_url, ensures the comment drawer is open, and extracts comments."""
+    async def scrape_post_comments(self, post_url: str, trigger_keyword: str, own_username: str = "") -> list:
+        """Navigates to post_url, ensures the comment drawer is open, and extracts comments.
+        own_username is excluded from results to avoid DMing yourself."""
         if not self.page:
             raise Exception("Browser not initialized.")
         
@@ -613,64 +777,129 @@ class InstagramBot:
             except Exception:
                 pass
                 
-            # Evaluate JS-based scraper to find comments
-            raw_comments = await self.page.evaluate("""() => {
+            # Run the comment scraper
+            raw_comments = await self.page.evaluate("""(ownUser) => {
                 const results = [];
-                const anchors = Array.from(document.querySelectorAll('a[href^="/"]'));
-                for (const anchor of anchors) {
-                    const href = anchor.getAttribute('href');
-                    if (!href) continue;
-                    
-                    const parts = href.split('/').filter(Boolean);
-                    if (parts.length !== 1) continue;
-                    
-                    const username = parts[0];
-                    if (['instagram', 'home', 'search', 'explore', 'messages', 'profile', 'notifications', 'reels', 'direct', 'create', 'threads'].includes(username.toLowerCase())) {
-                        continue;
-                    }
-                    
-                    let parent = anchor.parentElement;
-                    let foundCommentRow = null;
-                    for (let i = 0; i < 8 && parent; i++) {
-                        const hasReply = Array.from(parent.querySelectorAll('span, div, button')).some(el => {
-                            const txt = el.innerText ? el.innerText.trim().toLowerCase() : '';
-                            return txt === 'reply';
-                        });
-                        if (hasReply) {
-                            foundCommentRow = parent;
-                            break;
-                        }
-                        parent = parent.parentElement;
-                    }
-                    
-                    if (foundCommentRow) {
-                        const spans = Array.from(foundCommentRow.querySelectorAll('span'));
-                        let commentText = '';
-                        for (const span of spans) {
-                            const spanVal = span.innerText ? span.innerText.trim() : '';
-                            if (!spanVal) continue;
-                            
-                            if (spanVal.toLowerCase() === username.toLowerCase()) continue;
-                            if (spanVal.toLowerCase() === 'reply') continue;
-                            if (spanVal.toLowerCase() === 'see translation') continue;
-                            if (spanVal.toLowerCase().includes('view replies')) continue;
-                            if (spanVal.toLowerCase().includes('hide replies')) continue;
-                            if (/^\d+[wdhms]$/.test(spanVal)) continue;
-                            
-                            commentText = spanVal;
-                            break;
-                        }
-                        if (commentText) {
-                            results.push({ username, commentText });
+                const seen = new Set();
+                const navNames = new Set([
+                    'instagram','home','search','explore','messages','profile',
+                    'notifications','reels','direct','create','threads','accounts',
+                    'about','p','reel','stories','tv','tags','tagged','saved',
+                    'ar','developer','legal','privacy','safety','blog'
+                ]);
+
+                // Strategy 1: Find comments via <article> > <ul> > <li> structure
+                const article = document.querySelector('article');
+                if (article) {
+                    const uls = article.querySelectorAll('ul');
+                    for (const ul of uls) {
+                        const lis = ul.querySelectorAll(':scope > li');
+                        if (lis.length < 1) continue;
+
+                        for (const li of lis) {
+                            // Each comment <li> should contain a profile link
+                            const links = li.querySelectorAll('a[href^="/"]');
+                            let username = '';
+                            for (const link of links) {
+                                const href = link.getAttribute('href') || '';
+                                const parts = href.replace(/^\\//, '').replace(/\\/$/, '').split('/');
+                                if (parts.length === 1 && parts[0] && !navNames.has(parts[0].toLowerCase())) {
+                                    username = parts[0];
+                                    break;
+                                }
+                            }
+                            if (!username) continue;
+                            if (ownUser && username.toLowerCase() === ownUser.toLowerCase()) continue;
+
+                            // Get all text spans in this <li>
+                            const spans = li.querySelectorAll('span');
+                            let commentText = '';
+                            for (const span of spans) {
+                                if (span.querySelector('span')) continue;
+                                const val = (span.textContent || '').trim();
+                                if (!val) continue;
+                                if (val.toLowerCase() === username.toLowerCase()) continue;
+                                if (/^(reply|see translation|verified|follow)$/i.test(val)) continue;
+                                if (/view (\\d+ )?repl/i.test(val)) continue;
+                                if (/hide repl/i.test(val)) continue;
+                                if (/^\\d+[wdhms]$/.test(val)) continue;
+                                if (/^\\d+ (likes?|replies?|days?|weeks?|hours?|minutes?)$/i.test(val)) continue;
+                                if (/^(liked by|author|edited)$/i.test(val)) continue;
+                                if (val.length > 500) continue;
+                                commentText = val;
+                                break;
+                            }
+
+                            if (commentText) {
+                                const key = username.toLowerCase() + '::' + commentText.toLowerCase();
+                                if (!seen.has(key)) {
+                                    seen.add(key);
+                                    results.push({ username, commentText });
+                                }
+                            }
                         }
                     }
                 }
+
+                // Strategy 2: If strategy 1 found nothing, try finding any element
+                // that has both a profile link and nearby text content
+                if (results.length === 0) {
+                    const allLinks = document.querySelectorAll('a[href^="/"]');
+                    for (const link of allLinks) {
+                        const href = link.getAttribute('href') || '';
+                        const parts = href.replace(/^\\//, '').replace(/\\/$/, '').split('/');
+                        if (parts.length !== 1 || !parts[0]) continue;
+                        const username = parts[0];
+                        if (navNames.has(username.toLowerCase())) continue;
+                        if (ownUser && username.toLowerCase() === ownUser.toLowerCase()) continue;
+
+                        // Walk up to find a reasonable comment container
+                        let container = link;
+                        for (let depth = 0; depth < 8; depth++) {
+                            container = container.parentElement;
+                            if (!container) break;
+                            const tag = container.tagName.toLowerCase();
+                            if (tag === 'li' || tag === 'div') {
+                                const text = (container.textContent || '').trim();
+                                if (text.length > 20 && text.length < 1000) {
+                                    // Check if this looks like a comment (has username + some other text)
+                                    const spans = container.querySelectorAll('span');
+                                    let commentText = '';
+                                    for (const span of spans) {
+                                        if (span.querySelector('span')) continue;
+                                        const val = (span.textContent || '').trim();
+                                        if (!val || val.length < 1) continue;
+                                        if (val.toLowerCase() === username.toLowerCase()) continue;
+                                        if (/^(reply|see translation|verified|follow)$/i.test(val)) continue;
+                                        if (/view (\\d+ )?repl/i.test(val)) continue;
+                                        if (/^\\d+[wdhms]$/.test(val)) continue;
+                                        if (/^\\d+ (likes?|replies?)$/i.test(val)) continue;
+                                        if (val.length > 500) continue;
+                                        commentText = val;
+                                        break;
+                                    }
+                                    if (commentText) {
+                                        const key = username.toLowerCase() + '::' + commentText.toLowerCase();
+                                        if (!seen.has(key)) {
+                                            seen.add(key);
+                                            results.push({ username, commentText });
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 return results;
-            }""")
+            }""", own_username)
             
             for item in raw_comments:
                 uname = item["username"]
                 text = item["commentText"]
+                if own_username and uname.lower() == own_username.lower():
+                    continue
                 if trigger_keyword.lower() in text.lower():
                     comments_found.append((uname, text))
                         
@@ -682,7 +911,7 @@ class InstagramBot:
             log_to_db("ERROR", f"Error scraping comments on {post_url}: {str(e)}")
             return []
 
-# The background worker runner loop
+    # The background worker runner loop
 async def bot_worker_loop():
     global BOT_RUNNING
     log_to_db("INFO", "Starting background Bot Worker Loop...")
@@ -702,26 +931,22 @@ async def bot_worker_loop():
             min_delay = int(db.query(Setting).filter(Setting.key == "min_delay").first().value)
             max_delay = int(db.query(Setting).filter(Setting.key == "max_delay").first().value)
             
-            # Fetch active account
-            active_account = db.query(Account).filter(Account.status == "connected").first()
-            if not active_account:
-                log_to_db("ERROR", "No active connected Instagram account found. Link an account and mark it 'connected'.")
+            # Fetch connected accounts only for users who have activated their automation
+            active_user_ids = [u.id for u in db.query(User).filter(User.automation_active == True).all()]
+            if not active_user_ids:
                 db.close()
-                await asyncio.sleep(30)
+                await asyncio.sleep(10)
                 continue
 
-            # 3. Check today's send count (targets + comments)
-            today_start = datetime.combine(date.today(), datetime.min.time())
-            sent_targets = db.query(Target).filter(Target.status == "sent", Target.sent_at >= today_start).count()
-            sent_comments = db.query(ProcessedComment).filter(ProcessedComment.status == "sent", ProcessedComment.processed_at >= today_start).count()
-            total_sent_today = sent_targets + sent_comments
-            
-            if total_sent_today >= daily_limit:
-                log_to_db("WARNING", f"Daily sending limit reached ({total_sent_today}/{daily_limit}). Bot sleeping...")
+            active_accounts = db.query(Account).filter(
+                Account.status == "connected",
+                Account.user_id.in_(active_user_ids)
+            ).all()
+            if not active_accounts:
                 db.close()
-                await asyncio.sleep(900)
+                await asyncio.sleep(10)
                 continue
-            
+
             bot_action_taken = False
 
             # Check API Mode (suspends Playwright if using compliant official Meta API)
@@ -732,212 +957,267 @@ async def bot_worker_loop():
                 await asyncio.sleep(30)
                 continue
 
-            # --- Phase A: Comment-to-DM Trigger Checks ---
-            active_posts = db.query(MonitoredPost).filter(MonitoredPost.is_active == True).all()
-            if active_posts:
-                # Initialize bot
-                bot = InstagramBot(active_account.username)
-                await bot.init_browser(headless=settings.HEADLESS)
+            # Iterate through connected accounts sequentially to avoid resource hogging and IP blocks
+            for active_account in active_accounts:
+                if not BOT_RUNNING:
+                    break
+
+                # Parse proxy details
+                proxy_config = None
+                if active_account.proxy_host and active_account.proxy_port:
+                    proxy_config = {
+                        "server": f"http://{active_account.proxy_host}:{active_account.proxy_port}"
+                    }
+                    if active_account.proxy_username and active_account.proxy_password:
+                        proxy_config["username"] = active_account.proxy_username
+                        proxy_config["password"] = decrypt_secret(active_account.proxy_password)
+
+                # 3. Check today's send count (targets + comments)
+                today_start = datetime.combine(date.today(), datetime.min.time())
+                sent_targets = db.query(Target).filter(
+                    Target.status == "sent", 
+                    Target.sent_at >= today_start,
+                    Target.account_id == active_account.id
+                ).count()
                 
-                try:
-                    # Verify login
-                    logged_in = await bot.check_login_status()
-                    if not logged_in:
-                        # Only mark as verification_needed if we're sure we are logged out (login page or form visible)
-                        is_login_page = False
-                        try:
-                            current_url = bot.page.url if bot.page else ""
-                            is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
-                        except Exception:
-                            pass
-                        
-                        if is_login_page:
-                            log_to_db("ERROR", f"Account {active_account.username} requires re-authentication (login page detected).")
-                            active_account.status = "verification_needed"
-                            db.commit()
-                        else:
-                            log_to_db("WARNING", f"Login verification check failed for {active_account.username} (likely transient timeout). Retaining status 'connected' to retry.")
-                            
-                        await bot.close_browser()
-                        db.close()
-                        await asyncio.sleep(30)
-                        continue
-                        
-                    for post in active_posts:
-                        # Scrape comments
-                        comments = await bot.scrape_post_comments(post.post_url, post.trigger_keyword)
-                        log_to_db("INFO", f"Trigger comments scraped for post {post.id}: {comments}")
-                        
-                        for username, comment_text in comments:
-                            if not BOT_RUNNING:
-                                break
-                            
-                            # 1. Opt-out keyword check
-                            opt_out_setting = db.query(Setting).filter(Setting.key == "opt_out_keywords").first()
-                            opt_out_keywords = [k.strip().lower() for k in (opt_out_setting.value if opt_out_setting else "").split(",") if k.strip()]
-                            if comment_text.strip().lower() in opt_out_keywords:
-                                from backend.database import OptOut
-                                exists = db.query(OptOut).filter(OptOut.username == username.lower()).first()
-                                if not exists:
-                                    db.add(OptOut(username=username.lower()))
-                                    db.commit()
-                                    log_to_db("WARNING", f"[COMPLIANCE] Auto-blocked @{username} due to unsubscribe comment.")
-                                continue
+                # Fetch monitored posts associated with this account
+                active_posts = db.query(MonitoredPost).filter(
+                    MonitoredPost.is_active == True,
+                    MonitoredPost.account_id == active_account.id
+                ).all()
+                active_post_ids = [p.id for p in active_posts]
 
-                            # 2. Blocklist check
-                            from backend.database import OptOut
-                            blocked = db.query(OptOut).filter(OptOut.username == username.lower()).first()
-                            if blocked:
-                                log_to_db("WARNING", f"[COMPLIANCE] Ignored trigger comment: @{username} is in the blocklist.")
-                                continue
+                sent_comments = 0
+                if active_post_ids:
+                    sent_comments = db.query(ProcessedComment).filter(
+                        ProcessedComment.status == "sent", 
+                        ProcessedComment.processed_at >= today_start,
+                        ProcessedComment.post_id.in_(active_post_ids)
+                    ).count()
+                
+                total_sent_today = sent_targets + sent_comments
+                if total_sent_today >= daily_limit:
+                    log_to_db("WARNING", f"Daily sending limit reached for @{active_account.username} ({total_sent_today}/{daily_limit}). Skipping...")
+                    continue
 
-                            # Check if already processed successfully
-                            existing = db.query(ProcessedComment).filter(
-                                ProcessedComment.username == username,
-                                ProcessedComment.post_id == post.id
-                            ).first()
-                            
-                            # Skip if already sent successfully
-                            if existing and existing.status == "sent":
-                                continue
-                            
-                            # If previously failed, delete old record so we can retry
-                            if existing and existing.status == "failed":
-                                log_to_db("INFO", f"Retrying previously failed DM to @{username}...")
-                                db.delete(existing)
-                                db.commit()
-                            
-                            log_to_db("INFO", f"New trigger comment '{comment_text}' detected from @{username}. Preparing DM outreach...")
-                            raw_msg = post.template.content
-                            replaced_msg = raw_msg.replace("@username", f"@{username}").replace("{username}", username)
-                            parsed_message = parse_spintax(replaced_msg)
-                            
+                account_action_taken = False
+
+                # --- Phase A: Comment-to-DM Trigger Checks ---
+                if active_posts:
+                    bot = InstagramBot(active_account.username, proxy=proxy_config)
+                    await bot.init_browser(headless=settings.HEADLESS)
+                    
+                    try:
+                        logged_in = await bot.check_login_status()
+                        if not logged_in:
+                            is_login_page = False
                             try:
-                                # Safety check: make sure the page is still alive
-                                if bot.page is None or bot.page.is_closed():
-                                    log_to_db("WARNING", "Browser page was closed. Re-initializing browser...")
-                                    await bot.close_browser()
-                                    await bot.init_browser(headless=settings.HEADLESS)
-                                    logged_in = await bot.check_login_status()
-                                    if not logged_in:
-                                        raise Exception("Re-login failed after page crash.")
+                                current_url = bot.page.url if bot.page else ""
+                                is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
+                            except Exception:
+                                pass
+                            
+                            if is_login_page:
+                                log_to_db("ERROR", f"Account {active_account.username} requires re-authentication (login page detected).")
+                                active_account.status = "verification_needed"
+                                db.commit()
+                            else:
+                                log_to_db("WARNING", f"Login verification check failed for {active_account.username} (transient timeout).")
                                 
-                                success = await bot.send_direct_message(username, parsed_message)
-                                if success:
+                            await bot.close_browser()
+                            continue
+                            
+                        for post in active_posts:
+                            comments = await bot.scrape_post_comments(post.post_url, post.trigger_keyword, own_username=active_account.username)
+                            log_to_db("INFO", f"Scraped trigger comments for @{active_account.username} on post {post.id}: {comments}")
+                            
+                            for username, comment_text in comments:
+                                if not BOT_RUNNING:
+                                    break
+                                
+                                # 1. Opt-out keyword check
+                                opt_out_setting = db.query(Setting).filter(Setting.key == "opt_out_keywords").first()
+                                opt_out_keywords = [k.strip().lower() for k in (opt_out_setting.value if opt_out_setting else "").split(",") if k.strip()]
+                                if comment_text.strip().lower() in opt_out_keywords:
+                                    exists = db.query(OptOut).filter(
+                                        OptOut.username == username.lower(),
+                                        OptOut.user_id == active_account.user_id,
+                                        OptOut.workspace_id == active_account.workspace_id
+                                    ).first()
+                                    if not exists:
+                                        db.add(OptOut(username=username.lower(), user_id=active_account.user_id, workspace_id=active_account.workspace_id))
+                                        db.commit()
+                                        log_to_db("WARNING", f"[COMPLIANCE] Auto-blocked @{username} due to unsubscribe comment.")
+                                    continue
+
+                                # 2. Blocklist check
+                                blocked = db.query(OptOut).filter(
+                                    OptOut.username == username.lower(),
+                                    OptOut.user_id == active_account.user_id,
+                                    OptOut.workspace_id == active_account.workspace_id
+                                ).first()
+                                if blocked:
+                                    log_to_db("WARNING", f"[COMPLIANCE] Ignored trigger comment: @{username} is in the blocklist.")
+                                    continue
+
+                                # Check if already processed
+                                existing = db.query(ProcessedComment).filter(
+                                    ProcessedComment.username == username,
+                                    ProcessedComment.post_id == post.id
+                                ).first()
+                                
+                                if existing and existing.status == "sent":
+                                    continue
+                                
+                                if existing and existing.status == "failed":
+                                    log_to_db("INFO", f"Retrying failed DM to @{username}...")
+                                    db.delete(existing)
+                                    db.commit()
+                                
+                                log_to_db("INFO", f"New trigger comment detected from @{username}. Preparing DM outreach...")
+                                raw_msg = post.template.content
+                                replaced_msg = raw_msg.replace("@username", f"@{username}").replace("{username}", username)
+                                parsed_message = parse_spintax(replaced_msg)
+                                
+                                try:
+                                    if bot.page is None or bot.page.is_closed():
+                                        await bot.close_browser()
+                                        await bot.init_browser(headless=settings.HEADLESS)
+                                        logged_in = await bot.check_login_status()
+                                        if not logged_in:
+                                            raise Exception("Re-login failed after page crash.")
+                                    
+                                    success = await bot.send_direct_message(username, parsed_message)
+                                    if success:
+                                        db.add(ProcessedComment(
+                                            username=username,
+                                            post_id=post.id,
+                                            comment_text=comment_text,
+                                            status="sent",
+                                            processed_at=datetime.utcnow()
+                                        ))
+                                        log_to_db("SUCCESS", f"Sent trigger comment DM to @{username} from @{active_account.username}")
+                                    else:
+                                        raise Exception("DM delivery routine returned False.")
+                                except Exception as dm_err:
                                     db.add(ProcessedComment(
                                         username=username,
                                         post_id=post.id,
                                         comment_text=comment_text,
-                                        status="sent",
+                                        status="failed",
                                         processed_at=datetime.utcnow()
                                     ))
-                                    log_to_db("SUCCESS", f"Sent trigger comment DM to @{username}")
-                                else:
-                                    raise Exception("DM delivery routine returned False.")
-                            except Exception as dm_err:
-                                db.add(ProcessedComment(
-                                    username=username,
-                                    post_id=post.id,
-                                    comment_text=comment_text,
-                                    status="failed",
-                                    processed_at=datetime.utcnow()
-                                ))
-                                log_to_db("ERROR", f"Comment DM failed to @{username}: {dm_err}")
-                            
+                                    log_to_db("ERROR", f"Comment DM failed to @{username}: {dm_err}")
+                                
+                                db.commit()
+                                account_action_taken = True
+                                bot_action_taken = True
+                                
+                                # human delay spacer
+                                delay = random.randint(min_delay, max_delay)
+                                log_to_db("INFO", f"Sleeping for {delay} seconds between comment triggers...")
+                                for _ in range(delay):
+                                    if not BOT_RUNNING:
+                                        break
+                                    await asyncio.sleep(1)
+                                        
+                        await bot.close_browser()
+                    except Exception as loop_err:
+                        log_to_db("ERROR", f"Scraper logic failed for @{active_account.username}: {loop_err}")
+                        await bot.close_browser()
+
+                # --- Phase B: Standard Queue Checks ---
+                if not account_action_taken and BOT_RUNNING:
+                    next_target = db.query(Target).filter(
+                        Target.status == "pending",
+                        Target.account_id == active_account.id
+                    ).first()
+                    
+                    if next_target:
+                        # Blocklist check
+                        blocked = db.query(OptOut).filter(
+                            OptOut.username == next_target.username.lower(),
+                            OptOut.user_id == active_account.user_id,
+                            OptOut.workspace_id == active_account.workspace_id
+                        ).first()
+                        if blocked:
+                            log_to_db("WARNING", f"[COMPLIANCE] Skipping target queue: @{next_target.username} has opted out.")
+                            next_target.status = "failed"
+                            next_target.error_message = "Blocked: User has opted out / unsubscribed."
                             db.commit()
+                            continue
+                            
+                        # Select template
+                        templates = db.query(MessageTemplate).filter(
+                            MessageTemplate.is_active == True,
+                            MessageTemplate.user_id == active_account.user_id,
+                            MessageTemplate.workspace_id == active_account.workspace_id
+                        ).all()
+                        
+                        if templates:
+                            selected_template = random.choice(templates)
+                            raw_msg = selected_template.content
+                            replaced_msg = raw_msg.replace("@username", f"@{next_target.username}").replace("{username}", next_target.username)
+                            parsed_message = parse_spintax(replaced_msg)
+                            
+                            next_target.status = "sending"
+                            db.commit()
+                            
+                            bot = InstagramBot(active_account.username, proxy=proxy_config)
+                            await bot.init_browser(headless=settings.HEADLESS)
+                            
+                            try:
+                                logged_in = await bot.check_login_status()
+                                if logged_in:
+                                    success = await bot.send_direct_message(next_target.username, parsed_message)
+                                    if success:
+                                        next_target.status = "sent"
+                                        next_target.sent_at = datetime.utcnow()
+                                        next_target.message_sent = parsed_message
+                                        next_target.error_message = None
+                                        log_to_db("SUCCESS", f"Successfully completed DM task for @{next_target.username} via @{active_account.username}")
+                                    else:
+                                        raise Exception("Direct message dispatch failed.")
+                                        
+                                    await bot.perform_random_activity()
+                                else:
+                                    is_login_page = False
+                                    try:
+                                        current_url = bot.page.url if bot.page else ""
+                                        is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
+                                    except Exception:
+                                        pass
+                                    
+                                    if is_login_page:
+                                        log_to_db("ERROR", f"Account {active_account.username} requires re-authentication.")
+                                        active_account.status = "verification_needed"
+                                    else:
+                                        log_to_db("WARNING", f"Login verification check failed for {active_account.username}.")
+                                    next_target.status = "pending"
+                            except Exception as queue_err:
+                                log_to_db("ERROR", f"Queue action failed: {queue_err}")
+                                next_target.status = "failed"
+                                next_target.error_message = str(queue_err)
+                                next_target.sent_at = datetime.utcnow()
+                            finally:
+                                db.commit()
+                                await bot.close_browser()
+                                
                             bot_action_taken = True
                             
                             # human delay spacer
                             delay = random.randint(min_delay, max_delay)
-                            log_to_db("INFO", f"Sleeping for {delay} seconds between comment triggers...")
+                            log_to_db("INFO", f"Sleeping for {delay} seconds between target queue sends...")
                             for _ in range(delay):
                                 if not BOT_RUNNING:
                                     break
                                 await asyncio.sleep(1)
-                                    
-                except Exception as loop_err:
-                    log_to_db("ERROR", f"Comment scraper thread encountered error: {loop_err}")
-                finally:
-                    await bot.close_browser()
-
-            # --- Phase B: Standard Queue Checks ---
+                        else:
+                            log_to_db("ERROR", f"No active message templates found for user {active_account.user_id}. Create one first.")
+            
+            # If all accounts were idle, sleep for a short bit
             if not bot_action_taken and BOT_RUNNING:
-                next_target = db.query(Target).filter(Target.status == "pending").first()
-                if next_target:
-                    # Blocklist check
-                    from backend.database import OptOut
-                    blocked = db.query(OptOut).filter(OptOut.username == next_target.username.lower()).first()
-                    if blocked:
-                        log_to_db("WARNING", f"[COMPLIANCE] Skipping target queue: @{next_target.username} has opted out.")
-                        next_target.status = "failed"
-                        next_target.error_message = "Blocked: User has opted out / unsubscribed."
-                        db.commit()
-                        continue
-                        
-                    # Select template
-                    templates = db.query(MessageTemplate).filter(MessageTemplate.is_active == True).all()
-                    if templates:
-                        selected_template = random.choice(templates)
-                        raw_msg = selected_template.content
-                        replaced_msg = raw_msg.replace("@username", f"@{next_target.username}").replace("{username}", next_target.username)
-                        parsed_message = parse_spintax(replaced_msg)
-                        
-                        next_target.status = "sending"
-                        db.commit()
-                        
-                        bot = InstagramBot(active_account.username)
-                        await bot.init_browser(headless=settings.HEADLESS)
-                        
-                        try:
-                            logged_in = await bot.check_login_status()
-                            if logged_in:
-                                success = await bot.send_direct_message(next_target.username, parsed_message)
-                                if success:
-                                    next_target.status = "sent"
-                                    next_target.sent_at = datetime.utcnow()
-                                    next_target.message_sent = parsed_message
-                                    next_target.error_message = None
-                                    log_to_db("SUCCESS", f"Successfully completed DM task for @{next_target.username}")
-                                else:
-                                    raise Exception("Direct message dispatch failed.")
-                                    
-                                await bot.perform_random_activity()
-                            else:
-                                is_login_page = False
-                                try:
-                                    current_url = bot.page.url if bot.page else ""
-                                    is_login_page = "accounts/login" in current_url or (bot.page and await bot.page.locator('input[name="username"]').is_visible())
-                                except Exception:
-                                    pass
-                                
-                                if is_login_page:
-                                    log_to_db("ERROR", f"Account {active_account.username} requires re-authentication (login page detected).")
-                                    active_account.status = "verification_needed"
-                                else:
-                                    log_to_db("WARNING", f"Login verification check failed for {active_account.username} (likely transient timeout). Retaining status 'connected' to retry.")
-                                next_target.status = "pending"
-                        except Exception as queue_err:
-                            log_to_db("ERROR", f"Queue action failed: {queue_err}")
-                            next_target.status = "failed"
-                            next_target.error_message = str(queue_err)
-                            next_target.sent_at = datetime.utcnow()
-                        finally:
-                            db.commit()
-                            await bot.close_browser()
-                            
-                        # human delay spacer
-                        delay = random.randint(min_delay, max_delay)
-                        log_to_db("INFO", f"Sleeping for {delay} seconds between target queue sends...")
-                        for _ in range(delay):
-                            if not BOT_RUNNING:
-                                break
-                            await asyncio.sleep(1)
-                    else:
-                        log_to_db("ERROR", "No active message templates found. Create one first.")
-                        await asyncio.sleep(30)
-                else:
-                    # Both phases idle, sleep for a bit
-                    await asyncio.sleep(45)
+                await asyncio.sleep(30)
 
         except Exception as e:
             log_to_db("ERROR", f"Bot execution loop encountered an error: {str(e)}")

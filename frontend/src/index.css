@@ -668,20 +668,6 @@ tr:hover td {
     align-items: flex-start !important;
   }
 
-  /* Auth page: hide left hero panel on tablet/mobile */
-  .auth-hero {
-    display: none;
-  }
-
-  .auth-form-side {
-    max-width: 100%;
-    width: 100%;
-    padding: 40px 24px;
-  }
-
-  .auth-mobile-credit {
-    display: block;
-  }
 
   /* Accounts: allow action buttons to wrap on small cards */
   .account-card-actions {
@@ -730,14 +716,7 @@ tr:hover td {
     gap: 20px;
   }
 
-  /* Auth: tighter padding on very small screens */
-  .auth-form-side {
-    padding: 32px 16px;
-  }
 
-  .auth-card {
-    padding: 0;
-  }
 
   /* Dashboard control panel: stack its inner elements too */
   .control-panel > div:last-child {
@@ -1527,12 +1506,7 @@ tr:hover td {
   flex-shrink: 0;
 }
 
-/* -- Responsive tweaks for auth -- */
-@media (max-width: 480px) {
-  .auth-card {
-    padding: 28px 20px;
-  }
-}
+
 
 @media (max-width: 900px) {
   .header-user-chip {
@@ -3101,6 +3075,40 @@ tr:hover td {
     flex: 1 1 100%;
   }
 }
+
+/* ---------- Auth Page Mobile Responsive (placed at end of file to prevent overrides) ---------- */
+@media (max-width: 900px) {
+  .auth-hero {
+    display: none !important;
+  }
+
+  .auth-form-side {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 40px 24px !important;
+  }
+
+  .auth-mobile-credit {
+    display: block !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .auth-form-side {
+    padding: 32px 16px !important;
+  }
+
+  .auth-card {
+    padding: 0 !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-card {
+    padding: 28px 20px !important;
+  }
+}
+
 
 
 

@@ -66,6 +66,7 @@ app.include_router(official_api_router)
 
 @app.get("/")
 def read_root():
+    # Force uvicorn configuration reload
     return {"status": "online", "message": "GramGlide Auto DM Bot API is running!"}
 
 

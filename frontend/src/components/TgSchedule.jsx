@@ -86,10 +86,10 @@ export default function TgSchedule() {
               </select>
             </div>
             <div style={{ marginBottom: "12px" }}>
-              <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px", display: "block" }}>Content (HTML supported)</label>
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px", display: "block" }}>Content (HTML or Normal text supported)</label>
               <textarea
                 value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })}
-                rows={4} placeholder={"Your message here... Use <b>bold</b>, <i>italic</i>, <a href='url'>links</a>"}
+                rows={4} placeholder={"Your message here... Normal plain text or HTML formatting (<b>bold</b>, <i>italic</i>) is supported."}
                 required
               />
             </div>

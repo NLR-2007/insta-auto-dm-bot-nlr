@@ -139,7 +139,7 @@ export default function TgSchedule() {
               </div>
               <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px", whiteSpace: "pre-wrap", maxHeight: "80px", overflow: "hidden" }}>{post.content}</p>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><CalendarClock size={11} /> {new Date(post.scheduled_at).toLocaleString()}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><CalendarClock size={11} /> {new Date(post.scheduled_at.endsWith("Z") ? post.scheduled_at : post.scheduled_at + "Z").toLocaleString()}</span>
                 {post.is_recurring && <span style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--warning)" }}><Repeat size={11} /> {post.recurrence_rule}</span>}
                 <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
                   {post.status === "pending" && (

@@ -1387,7 +1387,9 @@ def tg_schedule_post(req: TgScheduledPostCreate, current_user: User = Depends(ge
     db.add(post)
     db.commit()
     db.refresh(post)
-    log_to_db("INFO", f"[TG] Post scheduled for {channel.title} at {req.scheduled_at}")
+    from datetime import timedelta
+    ist_time = req.scheduled_at + timedelta(hours=5, minutes=30)
+    log_to_db("INFO", f"[TG] Post scheduled for {channel.title} at {ist_time.strftime('%Y-%m-%d %H:%M:%S')} IST")
     return {"id": post.id, "status": post.status, "scheduled_at": post.scheduled_at.isoformat()}
 
 

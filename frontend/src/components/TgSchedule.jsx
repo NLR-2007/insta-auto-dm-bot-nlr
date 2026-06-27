@@ -32,10 +32,14 @@ export default function TgSchedule() {
     setError("");
     setSaving(true);
     try {
+      const localDate = new Date(form.scheduled_at);
+      const utcScheduledAt = localDate.toISOString();
+
       await apiFetch("/api/tg/posts/schedule", {
         method: "POST",
         body: JSON.stringify({
           ...form,
+          scheduled_at: utcScheduledAt,
           channel_id: parseInt(form.channel_id),
           recurrence_rule: form.is_recurring ? form.recurrence_rule : null,
         }),

@@ -102,17 +102,17 @@ class TelegramBotService:
             chat_id=int(chat_id), text=text, parse_mode=parse_mode,
         )
 
-    async def send_photo(self, token: str, chat_id: str, photo_url: str, caption: str = ""):
-        return await self.api_call(
-            token, "sendPhoto",
-            chat_id=int(chat_id), photo=photo_url, caption=caption, parse_mode="HTML",
-        )
+    async def send_photo(self, token: str, chat_id: str, photo_url: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
+        params = {"chat_id": int(chat_id), "photo": photo_url, "caption": caption}
+        if parse_mode:
+            params["parse_mode"] = parse_mode
+        return await self.api_call(token, "sendPhoto", **params)
 
-    async def send_document(self, token: str, chat_id: str, document_url: str, caption: str = ""):
-        return await self.api_call(
-            token, "sendDocument",
-            chat_id=int(chat_id), document=document_url, caption=caption, parse_mode="HTML",
-        )
+    async def send_document(self, token: str, chat_id: str, document_url: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
+        params = {"chat_id": int(chat_id), "document": document_url, "caption": caption}
+        if parse_mode:
+            params["parse_mode"] = parse_mode
+        return await self.api_call(token, "sendDocument", **params)
 
     async def delete_message(self, token: str, chat_id: str, message_id: int):
         return await self.api_call(
@@ -146,11 +146,29 @@ class TelegramBotService:
 
                 try:
                     if post.media_type == "photo" and post.media_path:
-                        result = await self.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
+                        try:
+                            result = await self.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode="HTML")
+                        except Exception as html_err:
+                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                result = await self.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode=None)
+                            else:
+                                raise html_err
                     elif post.media_type == "document" and post.media_path:
-                        result = await self.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
+                        try:
+                            result = await self.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode="HTML")
+                        except Exception as html_err:
+                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                result = await self.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode=None)
+                            else:
+                                raise html_err
                     else:
-                        result = await self.send_message(bot.bot_token, channel.chat_id, post.content)
+                        try:
+                            result = await self.send_message(bot.bot_token, channel.chat_id, post.content, parse_mode="HTML")
+                        except Exception as html_err:
+                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                result = await self.send_message(bot.bot_token, channel.chat_id, post.content, parse_mode=None)
+                            else:
+                                raise html_err
 
                     post.status = "sent"
                     post.sent_at = datetime.utcnow()
@@ -259,9 +277,15 @@ class TelegramBotService:
                                     name = member.get("first_name", "there")
                                     welcome_text = config["message"].replace("{name}", name)
                                     try:
-                                        await self.send_message(bot.bot_token, chat_id, welcome_text)
-                                    except Exception:
-                                        pass
+                                        await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode="HTML")
+                                    except Exception as html_err:
+                                        if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                            try:
+                                                await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode=None)
+                                            except Exception:
+                                                pass
+                                        else:
+                                            pass
 
         except Exception as e:
             log_to_db("ERROR", f"[TG] Moderation error: {e}")

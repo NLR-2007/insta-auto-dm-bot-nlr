@@ -39,6 +39,14 @@ async def lifespan(app: FastAPI):
     init_db()
 
     log_to_db("INFO", "FastAPI server started. DB initialized.")
+    
+    # Auto-start Telegram Service
+    try:
+        await telegram_service.start()
+        log_to_db("INFO", "[TG] Telegram service automatically started on startup.")
+    except Exception as e:
+        log_to_db("ERROR", f"[TG] Failed to auto-start Telegram service: {e}")
+        
     yield
     # Shutdown routine
     stop_bot_background()

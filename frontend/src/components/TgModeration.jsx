@@ -11,10 +11,30 @@ const RULE_TYPES = [
   { value: "welcome", label: "Welcome Message", icon: UserPlus },
 ];
 
+const PREDEFINED_CATEGORIES = {
+  crypto: {
+    label: "Crypto / Forex Spam",
+    keywords: ["bitcoin", "crypto", "forex", "trading", "invest", "solana", "eth", "binance", "airdrop", "profit"]
+  },
+  nsfw: {
+    label: "Adult / NSFW",
+    keywords: ["porn", "nsfw", "sexy", "hot", "dating", "girls", "nude", "cam", "xxx"]
+  },
+  gambling: {
+    label: "Gambling / Slots",
+    keywords: ["casino", "bet", "lottery", "jackpot", "slots", "roulette", "wanna bet"]
+  },
+  insults: {
+    label: "Hate Speech / Insults",
+    keywords: ["scam", "scammer", "fake", "idiot", "loser", "asshole", "retard"]
+  }
+};
+
 export default function TgModeration() {
   const [rules, setRules] = useState([]);
   const [channels, setChannels] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [form, setForm] = useState({ channel_id: "", rule_type: "keyword_ban", keywords: "", welcome_message: "", anti_link_enabled: true });
   const [error, setError] = useState("");
 
@@ -27,6 +47,26 @@ export default function TgModeration() {
   };
 
   useEffect(() => { fetchData(); }, []);
+
+  const handleCategoryToggle = (categoryKey) => {
+    const nextCategories = selectedCategories.includes(categoryKey)
+      ? selectedCategories.filter((k) => k !== categoryKey)
+      : [...selectedCategories, categoryKey];
+    
+    setSelectedCategories(nextCategories);
+    
+    const categoryKeywords = nextCategories.flatMap(cat => PREDEFINED_CATEGORIES[cat].keywords);
+    
+    const currentKeywords = form.keywords.split(",").map(k => k.trim()).filter(Boolean);
+    const allPredefinedKeywords = Object.values(PREDEFINED_CATEGORIES).flatMap(c => c.keywords);
+    const customKeywords = currentKeywords.filter(k => !allPredefinedKeywords.includes(k.toLowerCase()));
+    
+    const combined = [...customKeywords, ...categoryKeywords];
+    setForm({
+      ...form,
+      keywords: Array.from(new Set(combined)).join(", ")
+    });
+  };
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -42,6 +82,8 @@ export default function TgModeration() {
         body: JSON.stringify({ channel_id: parseInt(form.channel_id), rule_type: form.rule_type, config: JSON.stringify(config) }),
       });
       setShowForm(false);
+      setSelectedCategories([]);
+      setForm({ channel_id: "", rule_type: "keyword_ban", keywords: "", welcome_message: "", anti_link_enabled: true });
       fetchData();
     } catch (e) { setError(e.message); }
   };
@@ -93,9 +135,47 @@ export default function TgModeration() {
             </div>
 
             {form.rule_type === "keyword_ban" && (
-              <div style={{ marginBottom: "12px" }}>
-                <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px", display: "block" }}>Banned Keywords (comma-separated)</label>
-                <input type="text" value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} placeholder="spam, scam, crypto" required />
+              <div style={{ marginBottom: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "6px", display: "block" }}>Predefined Filter Presets (Toggle to auto-fill)</label>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                    {Object.entries(PREDEFINED_CATEGORIES).map(([key, cat]) => {
+                      const isChecked = selectedCategories.includes(key);
+                      return (
+                        <button
+                          type="button"
+                          key={key}
+                          onClick={() => handleCategoryToggle(key)}
+                          style={{
+                            padding: "6px 12px",
+                            borderRadius: "20px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            border: "1px solid var(--border-color)",
+                            cursor: "pointer",
+                            transition: "all 0.2s",
+                            background: isChecked ? "rgba(37, 99, 235, 0.08)" : "transparent",
+                            borderColor: isChecked ? "#2563EB" : "var(--border-color)",
+                            color: isChecked ? "#2563EB" : "var(--text-secondary)",
+                          }}
+                        >
+                          {cat.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)", marginBottom: "4px", display: "block" }}>Banned Keywords (comma-separated or custom)</label>
+                  <input
+                    type="text"
+                    value={form.keywords}
+                    onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+                    placeholder="spam, scam, crypto"
+                    required
+                  />
+                </div>
               </div>
             )}
             {form.rule_type === "welcome" && (

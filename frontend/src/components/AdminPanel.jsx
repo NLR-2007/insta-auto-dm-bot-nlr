@@ -382,7 +382,7 @@ export default function AdminPanel() {
               logs.map(log => (
                 <div key={log.id} className="log-line">
                   <span className="log-timestamp">
-                    {new Date(log.timestamp).toLocaleTimeString()}
+                    {new Date(log.timestamp.endsWith("Z") ? log.timestamp : log.timestamp + "Z").toLocaleTimeString()}
                   </span>
                   <span className="log-level" style={{ color: logColors[log.level] || "#D4D4D4" }}>
                     [{log.level}]

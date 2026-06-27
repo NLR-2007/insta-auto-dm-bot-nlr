@@ -179,7 +179,7 @@ class BotLog(Base):
     __tablename__ = "bot_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=datetime.now)
+    timestamp = Column(DateTime, default=datetime.utcnow)
     level = Column(String(20), default="INFO")  # INFO, WARNING, ERROR, SUCCESS
     message = Column(Text, nullable=False)
 
@@ -317,12 +317,11 @@ def log_to_db(level: str, message: str):
     """Helper to write to bot_logs table immediately."""
     db = SessionLocal()
     try:
-        log_entry = BotLog(level=level, message=message, timestamp=datetime.now())
+        log_entry = BotLog(level=level, message=message, timestamp=datetime.utcnow())
         db.add(log_entry)
         db.commit()
         safe_msg = message.encode("ascii", errors="replace").decode("ascii")
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"{time_str} [{level}] {safe_msg}", flush=True)
+        print(f"[{level}] {safe_msg}", flush=True)
     except Exception as e:
         try:
             print(f"Failed to log to DB: {e}", flush=True)

@@ -258,7 +258,8 @@ export default function Dashboard() {
             </div>
           ) : (
             logs.slice().reverse().map((log) => {
-              const formattedTime = new Date(log.timestamp).toLocaleTimeString();
+              const dateStr = log.timestamp.endsWith("Z") ? log.timestamp : log.timestamp + "Z";
+              const formattedTime = new Date(dateStr).toLocaleTimeString();
               return (
                 <div key={log.id} className="log-line">
                   <span className="log-timestamp">{formattedTime}</span>

@@ -5,7 +5,7 @@ import {
   Camera, Clock, Bot, Filter, Layers, Rocket, Star, Gift
 } from "lucide-react";
 
-export default function LandingPage({ onGetStarted }) {
+export default function LandingPage({ onGetStarted, onNavigateLegal }) {
   const [activeFaq, setActiveFaq] = useState(null);
 
   const toggleFaq = (index) => {
@@ -658,6 +658,12 @@ export default function LandingPage({ onGetStarted }) {
                 NLR GROUP OF COMPANIES
               </a>
               <button onClick={() => scrollToSection("faqs")}>Support FAQ</button>
+            </div>
+            <div>
+              <p className="footer-title">Legal</p>
+              <button onClick={() => onNavigateLegal("privacy")}>Privacy Policy</button>
+              <button onClick={() => onNavigateLegal("terms")}>Terms &amp; Conditions</button>
+              <button onClick={() => onNavigateLegal("disclaimer")}>Legal Disclaimer</button>
             </div>
           </div>
         </div>

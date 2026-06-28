@@ -9,6 +9,9 @@ import AdminPanel from "./components/AdminPanel";
 import AuthPage from "./components/AuthPage";
 import TelegramPanel from "./components/TelegramPanel";
 import LandingPage from "./components/LandingPage";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+import TermsConditions from "./components/TermsConditions";
+import LegalDisclaimer from "./components/LegalDisclaimer";
 import {
   LayoutDashboard, UserCheck, Users, Mail,
   Settings as SettingsIcon, MessageSquare, Menu, X,
@@ -24,6 +27,7 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState("checking");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [legalPage, setLegalPage] = useState(null);
 
   // ── Check existing session on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -66,6 +70,9 @@ export default function App() {
 
   // ── Auth gate ────────────────────────────────────────────────────────────────
   if (!isAuthenticated) {
+    if (legalPage === "privacy") return <PrivacyPolicy onBack={() => setLegalPage(null)} />;
+    if (legalPage === "terms") return <TermsConditions onBack={() => setLegalPage(null)} />;
+    if (legalPage === "disclaimer") return <LegalDisclaimer onBack={() => setLegalPage(null)} />;
     if (showAuth) {
       return (
         <AuthPage
@@ -74,7 +81,7 @@ export default function App() {
         />
       );
     }
-    return <LandingPage onGetStarted={() => setShowAuth(true)} />;
+    return <LandingPage onGetStarted={() => setShowAuth(true)} onNavigateLegal={setLegalPage} />;
   }
 
   // ── Nav items ────────────────────────────────────────────────────────────────

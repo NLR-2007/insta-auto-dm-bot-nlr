@@ -53,10 +53,10 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
   };
 
   const features = [
-    { icon: Send, title: "Smart DM Automation", desc: "Comment-triggered and queue-based DM delivery" },
-    { icon: BarChart3, title: "Real-Time Analytics", desc: "Track sent, pending, and failed messages live" },
-    { icon: Shield, title: "Compliance Built-In", desc: "Opt-out blocklists and consent enforcement" },
-    { icon: MessageSquare, title: "Telegram Integration", desc: "Schedule posts and moderate channels" },
+    { icon: Send, title: "Instagram DM Engine", desc: "Comment-triggered keyword DMs with cascading delivery" },
+    { icon: MessageSquare, title: "Telegram Suite", desc: "Scheduled posts, multi-bot management & auto-moderation" },
+    { icon: BarChart3, title: "Real-Time Dashboard", desc: "Live logs, send/fail tracking, and unified analytics" },
+    { icon: Shield, title: "Safe & Compliant", desc: "Passwordless auth, opt-out blocklists, rate limiting" },
   ];
 
   return (
@@ -68,11 +68,11 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
             <div className="auth-hero-icon">
               <Zap size={32} fill="#F97316" stroke="none" />
             </div>
-            <h1 className="auth-hero-title">GramGlide</h1>
+            <h1 className="auth-hero-title">Lyvora</h1>
           </div>
 
           <p className="auth-hero-subtitle">
-            The all-in-one Instagram & Telegram automation platform for modern marketers.
+            Leading Your Vision with Optimized Reliable Automation. Instagram DMs + Telegram channels, unified.
           </p>
 
           <div className="auth-features">

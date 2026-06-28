@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     log_to_db("INFO", "FastAPI server shutting down. Bot worker stopped.")
 
 app = FastAPI(
-    title="GramGlide Auto DM API",
+    title="Lyvora Automation API",
     description="Backend service managing compliant Instagram DM automation",
     version="1.0.0",
     lifespan=lifespan
@@ -75,7 +75,7 @@ app.include_router(official_api_router)
 @app.get("/")
 def read_root():
     # Force uvicorn configuration reload (root-level .env updated)
-    return {"status": "online", "message": "GramGlide Auto DM Bot API is running!"}
+    return {"status": "online", "message": "Lyvora Automation API is running!"}
 
 
 # --- Settings / Logs / Trigger Schema Declarations ---

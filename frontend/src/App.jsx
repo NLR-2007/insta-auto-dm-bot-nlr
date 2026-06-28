@@ -151,7 +151,7 @@ export default function App() {
       <div className="mobile-header">
         <div className="brand" style={{ fontSize: "16px" }}>
           <Mail size={20} style={{ stroke: "url(#brand-grad)" }} />
-          <span>GramGlide</span>
+          <span>Lyvora</span>
         </div>
         <button className="hamburger-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
           {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
@@ -168,7 +168,7 @@ export default function App() {
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand">
           <Mail size={24} style={{ stroke: "url(#brand-grad)" }} />
-          <span>GramGlide</span>
+          <span>Lyvora</span>
         </div>
 
         <nav className="nav-menu">

@@ -1,10 +1,10 @@
-# GramGlide SaaS Foundation
+# Lyvora SaaS Foundation
 
 This branch begins converting the local Insta-Automate project into a SaaS-ready creator automation platform.
 
 ## Product Positioning
 
-GramGlide should support two transparent modes:
+Lyvora should support two transparent modes:
 
 1. **Official API Mode**  
    Use Meta/Instagram official APIs wherever a creator or business has access.

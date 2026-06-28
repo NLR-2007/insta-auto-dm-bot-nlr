@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import {
   Zap, Shield, MessageSquare, Send, Lock, Sparkles, Check, ChevronDown, ArrowRight,
-  Play, CheckCircle2, AlertTriangle, Cpu, Globe, Users, BarChart3, HelpCircle
+  Play, CheckCircle2, AlertTriangle, Cpu, Globe, Users, BarChart3, HelpCircle,
+  Camera, Clock, Bot, Filter, Layers, Rocket, Star, Gift
 } from "lucide-react";
 
 export default function LandingPage({ onGetStarted }) {
@@ -11,147 +12,168 @@ export default function LandingPage({ onGetStarted }) {
     setActiveFaq(activeFaq === index ? null : index);
   };
 
-  const features = [
+  const igFeatures = [
     {
       icon: Lock,
       title: "Passwordless Authentication",
-      desc: "Connect your Instagram accounts safely using browser cookies. Your passwords never touch our system, ensuring absolute security.",
+      desc: "Connect Instagram accounts safely using browser cookies. Your passwords never touch our system.",
       color: "rgba(249, 115, 22, 0.08)",
       textColor: "#F97316"
     },
     {
       icon: MessageSquare,
       title: "Comment-to-DM Triggers",
-      desc: "Automatically send direct messages when users comment target keywords on your monitored Reels, posts, or carousels.",
+      desc: "Auto-send DMs when users comment target keywords on your monitored Reels, posts, or carousels.",
       color: "rgba(37, 99, 235, 0.08)",
       textColor: "#2563EB"
     },
     {
-      icon: Cpu,
+      icon: Layers,
       title: "Cascading Delivery Pipeline",
-      desc: "Robust 3-tier fallback checks. Bypasses strict interface restrictions by searching and messaging through multiple alternative routes.",
+      desc: "3-tier fallback strategy ensures messages are delivered regardless of profile button restrictions.",
       color: "rgba(22, 163, 74, 0.08)",
       textColor: "#16A34A"
     },
     {
       icon: Sparkles,
       title: "Spintax Message Templates",
-      desc: "Keep outreach human-like and avoid spam filters. Dynamically randomize greeting synonyms and substitute client usernames.",
+      desc: "Keep outreach human-like with dynamically randomized greetings, synonyms, and username substitutions.",
       color: "rgba(168, 85, 247, 0.08)",
       textColor: "#A855F7"
-    },
+    }
+  ];
+
+  const tgFeatures = [
     {
-      icon: Send,
-      title: "Telegram Channel Suite",
-      desc: "Extend your outreach to Telegram. Automate bot replies, schedule channel broadcasts, and implement auto-moderation tools.",
+      icon: Bot,
+      title: "Multi-Bot Management",
+      desc: "Add multiple Telegram bot tokens and sync channels automatically. Manage everything from one dashboard.",
       color: "rgba(14, 165, 233, 0.08)",
       textColor: "#0EA5E9"
     },
     {
-      icon: BarChart3,
-      title: "Real-Time Tracking Logs",
-      desc: "Monitor active workers live. View sent, pending, or failed comments, read browser execution logs, and analyze campaign conversion.",
+      icon: Clock,
+      title: "Scheduled Channel Posts",
+      desc: "Queue content with timezone support, set recurring broadcasts, and never miss a posting window.",
+      color: "rgba(99, 102, 241, 0.08)",
+      textColor: "#6366F1"
+    },
+    {
+      icon: Filter,
+      title: "Auto-Moderation Rules",
+      desc: "Create custom spam filters, keyword blocklists, and auto-delete rules to keep channels clean.",
       color: "rgba(236, 72, 153, 0.08)",
       textColor: "#EC4899"
+    },
+    {
+      icon: Send,
+      title: "Channel Broadcasting",
+      desc: "Send to multiple channels simultaneously with media support and instant delivery tracking.",
+      color: "rgba(16, 185, 129, 0.08)",
+      textColor: "#10B981"
     }
   ];
 
   const steps = [
     {
       number: "01",
-      title: "Export Session Cookies",
-      desc: "Log into Instagram on your personal desktop browser. Export your session cookies context to a JSON file using a standard cookie editor extension."
+      title: "Connect Your Accounts",
+      desc: "Upload Instagram session cookies for passwordless auth or add Telegram bot tokens. No passwords, no API approvals needed."
     },
     {
       number: "02",
-      title: "Import & Configure Triggers",
-      desc: "Upload the cookie JSON to connect your profile safely. Select the target Instagram Reels you wish to monitor and specify trigger words (e.g. 'SEND')."
+      title: "Configure Automations",
+      desc: "Set up comment-triggered DM flows for Instagram, schedule Telegram posts, create moderation rules, and customize message templates."
     },
     {
       number: "03",
-      title: "Launch Background Workers",
-      desc: "Activate the headless worker thread. GramGlide headlessly scrolls comments, detects active keyword matches, and dispatches custom-templated DMs."
+      title: "Launch & Monitor",
+      desc: "Activate background workers and watch everything in real-time. Track DMs sent, scheduled posts delivered, and moderation actions from a unified dashboard."
     }
   ];
 
   const pricingTiers = [
     {
-      name: "Creator Lite",
+      name: "Self-Hosted",
       price: "$0",
-      period: "Self-Hosted / Free",
-      desc: "Perfect for single creators hosting their own backend uvicorn servers.",
+      period: "Forever Free",
+      desc: "Run the open-source stack on your own machine with full control.",
       features: [
-        "1 Connected Instagram Account",
-        "30 automated DMs per day limit",
-        "Comment-triggered keyword monitoring",
-        "Spintax dynamic template processing",
-        "Local SQLite database logging",
-        "Standard delay intervals (45s - 120s)"
+        "1 Instagram Account",
+        "30 DMs per day",
+        "Comment-triggered monitoring",
+        "Spintax templates",
+        "Local SQLite database",
+        "Community support"
       ],
-      cta: "Host Locally",
+      cta: "Clone & Deploy",
       popular: false,
       badge: "Open Source"
     },
     {
-      name: "Pro Marketer",
+      name: "Beta Pro",
       price: "$0",
-      originalPrice: "$29",
-      period: "Free Beta Test",
-      desc: "For digital marketers looking to scale comment outreach with high safety.",
+      originalPrice: "$49",
+      period: "Free During Beta",
+      desc: "Full-featured plan with Instagram + Telegram automation unlocked.",
       features: [
-        "5 Connected Instagram Accounts",
-        "Unlimited automated DMs (safety spaced)",
-        "Telegram integration suite (Schedule & Bots)",
-        "Priority worker thread allocation",
-        "Advanced opt-out blocklists",
-        "Dedicated remote worker execution",
-        "Priority Email & Discord support"
+        "5 Instagram Accounts",
+        "Unlimited DMs (safety-spaced)",
+        "Full Telegram Suite",
+        "Scheduled posts & broadcasting",
+        "Auto-moderation rules",
+        "Priority worker allocation",
+        "Email & Discord support"
       ],
-      cta: "Start Free Testing",
+      cta: "Start Free Beta",
       popular: true,
-      badge: "Free Testing Phase"
+      badge: "Beta - 100% Free"
     },
     {
-      name: "Agency / Scale",
+      name: "Agency",
       price: "$0",
-      originalPrice: "$79",
-      period: "Free Beta Test",
-      desc: "For outreach agencies managing several influencer profiles.",
+      originalPrice: "$99",
+      period: "Free During Beta",
+      desc: "For agencies managing multiple creator profiles at scale.",
       features: [
-        "Unlimited Connected Instagram Accounts",
-        "Simultaneous worker execution threads",
-        "Proxy rotation support per account profile",
-        "Custom API access & Webhook triggers",
-        "Telegram moderation auto-filters",
-        "Weekly outreach conversion analytics",
-        "Dedicated Account Success manager"
+        "Unlimited Instagram Accounts",
+        "Unlimited Telegram Bots",
+        "Multi-workspace management",
+        "Proxy rotation support",
+        "Custom API & webhooks",
+        "Conversion analytics",
+        "Dedicated account manager"
       ],
-      cta: "Start Free Testing",
+      cta: "Start Free Beta",
       popular: false,
-      badge: "Free Testing Phase"
+      badge: "Beta - 100% Free"
     }
   ];
 
   const faqs = [
     {
-      q: "Does GramGlide require my Instagram password?",
-      a: "No! GramGlide runs 100% password-free. It uses standard session cookies exported from your browser. Your login credentials are never typed, stored, or transmitted, reducing security risks entirely."
+      q: "Is Lyvora really free during the Beta?",
+      a: "Yes! Every feature across all tiers is 100% free during our Beta testing phase. No credit card required, no hidden fees. We're gathering feedback to build the best creator automation platform."
     },
     {
-      q: "How does the bot avoid Instagram shadowbans and blocks?",
-      a: "The automation engine simulates organic human behavior. It runs headlessly using Playwright Chromium with randomized typing delays (between 45 to 120 seconds), limits daily outreach limits, and supports spintax templates to prevent repetitive message patterns."
+      q: "Does Lyvora require my Instagram password?",
+      a: "Never. Lyvora uses session cookies exported from your browser. Your login credentials are never typed, stored, or transmitted through our system."
     },
     {
-      q: "What is the Cascading DM Delivery Strategy?",
-      a: "Instagram hides the 'Message' button on certain user profiles. GramGlide handles this by attempting a 3-tier cascade: first, it checks for a profile message button; if missing, it opens the profile action dropdown list; if still hidden, it fallback-navigates to the direct messaging inbox and searches for their username."
+      q: "What Telegram features are included?",
+      a: "You get multi-bot management, scheduled channel posts with timezone support, recurring broadcasts, auto-moderation rules (spam filters, keyword blocking, auto-delete), and real-time delivery tracking."
     },
     {
-      q: "Can I monitor multiple Reels/posts simultaneously?",
-      a: "Yes! You can configure multiple active post URLs. GramGlide's background crawler loops through all active posts, pulling recent comments, checking keyword matches, and tracking processed comment histories in the database to prevent duplicate outreach."
+      q: "How does the bot avoid Instagram detection?",
+      a: "Lyvora simulates organic human behavior using Playwright browser automation with randomized typing delays (45-120s), daily DM limits, working hours enforcement, and spintax templates to prevent repetitive patterns."
     },
     {
-      q: "Does this require my computer to remain turned on?",
-      a: "If you host the open-source backend locally, the script needs to run on your device. However, if you deploy our cloud container backend on a VPS or sign up for the Pro cloud plan, the workers run 24/7 on our remote servers, even with your dashboard closed."
+      q: "Can I use Instagram and Telegram automation together?",
+      a: "Absolutely! Lyvora is a unified platform. You can run Instagram comment-to-DM flows and Telegram channel automation simultaneously from the same dashboard, with shared analytics and monitoring."
+    },
+    {
+      q: "What happens when the Beta ends?",
+      a: "You'll get early access pricing as a founding user. All your data, configurations, and automations will carry over seamlessly. We'll announce pricing well in advance."
     }
   ];
 
@@ -171,13 +193,12 @@ export default function LandingPage({ onGetStarted }) {
             <div className="nav-logo-icon">
               <Zap size={18} fill="#F97316" stroke="none" />
             </div>
-            <span>GramGlide</span>
+            <span>Lyvora</span>
           </div>
 
           <nav className="nav-links">
             <button onClick={() => scrollToSection("features")}>Features</button>
             <button onClick={() => scrollToSection("how-it-works")}>How It Works</button>
-            <button onClick={() => scrollToSection("testimonials")}>Reviews</button>
             <button onClick={() => scrollToSection("pricing")}>Pricing</button>
             <button onClick={() => scrollToSection("faqs")}>FAQs</button>
           </nav>
@@ -187,7 +208,7 @@ export default function LandingPage({ onGetStarted }) {
               Sign In
             </button>
             <button className="landing-btn landing-btn-primary" onClick={onGetStarted}>
-              Launch App
+              Try Free Beta
               <ArrowRight size={14} />
             </button>
           </div>
@@ -198,36 +219,56 @@ export default function LandingPage({ onGetStarted }) {
       <section id="hero" className="landing-hero">
         <div className="hero-grid">
           <div className="hero-content">
-            <div className="hero-badge">
-              <Sparkles size={12} className="text-orange" />
-              <span>SaaS DM Automation Solution</span>
+            <div className="hero-badge-row">
+              <div className="hero-badge hero-badge-beta">
+                <Gift size={12} />
+                <span>Free Beta - All Features Unlocked</span>
+              </div>
             </div>
 
             <h1 className="hero-title">
-              Automate Instagram DMs <br />
-              <span className="gradient-text">Without Passwords</span>
+              Automate Your <br />
+              <span className="gradient-text-ig">Instagram</span> +{" "}
+              <span className="gradient-text-tg">Telegram</span>
             </h1>
 
+            <p className="hero-tagline">
+              Leading Your Vision with Optimized Reliable Automation
+            </p>
+
             <p className="hero-description">
-              Scalable, comment-triggered Instagram outreach running organic browser simulations. Connect accounts safely with session cookies, trigger direct messages via key comment reactions, and boost lead conversions seamlessly.
+              One platform to automate Instagram comment-to-DM flows and Telegram channel management.
+              Schedule posts, moderate channels, trigger keyword DMs, and track everything in real-time.
+              <strong> Currently 100% free during Beta.</strong>
             </p>
 
             <div className="hero-buttons">
               <button className="landing-btn landing-btn-primary landing-btn-lg" onClick={onGetStarted}>
-                Start Automating Free
+                Start Free Beta
                 <ArrowRight size={16} />
               </button>
               <button className="landing-btn landing-btn-secondary landing-btn-lg" onClick={() => scrollToSection("features")}>
-                Explore Capabilities
+                See All Features
               </button>
             </div>
 
-            <div className="hero-trust">
-              <span className="trust-label">TRUSTED BY 12,000+ CREATORS & AGENCIES WORLDWIDE</span>
+            <div className="hero-platform-pills">
+              <div className="platform-pill pill-ig">
+                <Camera size={14} />
+                <span>Instagram DMs</span>
+              </div>
+              <div className="platform-pill pill-tg">
+                <Send size={14} />
+                <span>Telegram Channels</span>
+              </div>
+              <div className="platform-pill pill-free">
+                <Sparkles size={14} />
+                <span>100% Free</span>
+              </div>
             </div>
           </div>
 
-          {/* Interactive CSS Dashboard Mockup */}
+          {/* Dual-Platform Dashboard Mockup */}
           <div className="hero-mockup-wrapper">
             <div className="browser-mockup">
               <div className="browser-header">
@@ -239,56 +280,56 @@ export default function LandingPage({ onGetStarted }) {
                 <div className="browser-address">app.gramglide.com/dashboard</div>
               </div>
               <div className="browser-content">
-                {/* Simulated App Header */}
                 <div className="sim-app-header">
                   <div className="sim-logo">
-                    <Zap size={14} className="text-blue" />
-                    <span>GramGlide Dashboard</span>
+                    <Zap size={14} className="text-orange" />
+                    <span>Lyvora</span>
                   </div>
                   <span className="sim-status-pill">
-                    <span className="pulse-dot"></span> Active Engine
+                    <span className="pulse-dot"></span> Live
                   </span>
                 </div>
 
-                {/* Simulated Stats Grid */}
                 <div className="sim-stats-grid">
                   <div className="sim-stat-card">
-                    <span className="sim-stat-lbl">DMs DISPATCHED</span>
-                    <span className="sim-stat-val text-blue">42,891</span>
+                    <span className="sim-stat-lbl">IG DMs SENT</span>
+                    <span className="sim-stat-val text-orange">1,284</span>
                   </div>
                   <div className="sim-stat-card">
-                    <span className="sim-stat-lbl">ACTIVE PROFILES</span>
-                    <span className="sim-stat-val">8 / 10</span>
+                    <span className="sim-stat-lbl">TG POSTS</span>
+                    <span className="sim-stat-val text-blue">346</span>
                   </div>
                   <div className="sim-stat-card">
-                    <span className="sim-stat-lbl">CONVERSION RATE</span>
-                    <span className="sim-stat-val text-green">24.6%</span>
+                    <span className="sim-stat-lbl">MODERATED</span>
+                    <span className="sim-stat-val text-green">89</span>
                   </div>
                 </div>
 
-                {/* Simulated Monitor Queue */}
-                <div className="sim-queue-box">
-                  <p className="sim-box-title">Recent Keyword DMs Sent</p>
-                  <div className="sim-list">
-                    <div className="sim-item">
+                <div className="sim-dual-feed">
+                  <div className="sim-feed-section">
+                    <p className="sim-feed-label"><Camera size={10} /> Instagram Activity</p>
+                    <div className="sim-feed-item">
                       <div className="sim-user">
-                        <span className="avatar">JD</span>
+                        <span className="avatar orange">JD</span>
                         <div>
                           <p className="name">@john_dev</p>
-                          <p className="comment">Commented "SEND INFO" on Reel</p>
+                          <p className="comment">Commented "SEND"</p>
                         </div>
                       </div>
-                      <span className="badge badge-success">Sent (45s ago)</span>
+                      <span className="badge badge-success">DM Sent</span>
                     </div>
-                    <div className="sim-item">
+                  </div>
+                  <div className="sim-feed-section">
+                    <p className="sim-feed-label"><Send size={10} /> Telegram Activity</p>
+                    <div className="sim-feed-item">
                       <div className="sim-user">
-                        <span className="avatar orange">SK</span>
+                        <span className="avatar">CH</span>
                         <div>
-                          <p className="name">@sarah_key</p>
-                          <p className="comment">Commented "GROWTH" on Reel</p>
+                          <p className="name">#coding-tips</p>
+                          <p className="comment">Scheduled post sent</p>
                         </div>
                       </div>
-                      <span className="badge badge-success">Sent (2m ago)</span>
+                      <span className="badge badge-success">Delivered</span>
                     </div>
                   </div>
                 </div>
@@ -298,39 +339,60 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </section>
 
+      {/* ── Beta Banner ── */}
+      <section className="beta-banner">
+        <div className="beta-banner-inner">
+          <div className="beta-icon-wrap">
+            <Rocket size={20} />
+          </div>
+          <div className="beta-banner-text">
+            <strong>Free Beta Program</strong>
+            <span>All premium features unlocked at no cost. Join now and help shape the future of creator automation.</span>
+          </div>
+          <button className="landing-btn landing-btn-primary" onClick={onGetStarted}>
+            Join Beta
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </section>
+
       {/* ── Stats Metric Bar ── */}
       <section className="stats-metric-bar">
         <div className="stats-bar-container">
           <div className="metric-item">
-            <span className="metric-val">5.4M+</span>
-            <span className="metric-lbl">DMs Dispatched</span>
-          </div>
-          <div className="metric-item">
-            <span className="metric-val">99.8%</span>
-            <span className="metric-lbl">Account Safety Score</span>
+            <span className="metric-val">2</span>
+            <span className="metric-lbl">Platforms Automated</span>
           </div>
           <div className="metric-item">
             <span className="metric-val">100%</span>
             <span className="metric-lbl">Password-Free Setup</span>
           </div>
           <div className="metric-item">
-            <span className="metric-val">15ms</span>
-            <span className="metric-lbl">Scraper Search Delay</span>
+            <span className="metric-val">$0</span>
+            <span className="metric-lbl">Beta Access Cost</span>
+          </div>
+          <div className="metric-item">
+            <span className="metric-val">24/7</span>
+            <span className="metric-lbl">Background Automation</span>
           </div>
         </div>
       </section>
 
-      {/* ── Core Features Section ── */}
+      {/* ── Instagram Features ── */}
       <section id="features" className="features-section">
         <div className="section-header">
-          <h2 className="section-title">Engines Tuned for Outreach and Security</h2>
+          <div className="hero-badge" style={{ margin: "0 auto 4px", background: "rgba(249, 115, 22, 0.06)", borderColor: "rgba(249, 115, 22, 0.2)", color: "#F97316" }}>
+            <Camera size={12} />
+            <span>Instagram Automation</span>
+          </div>
+          <h2 className="section-title">Intelligent Instagram DM Outreach</h2>
           <p className="section-subtitle">
-            GramGlide combines backend scraper loops with browser simulation vectors to establish highly conversion-oriented messaging loops.
+            Trigger automated direct messages when users comment on your posts. Passwordless, safe, and conversion-focused.
           </p>
         </div>
 
-        <div className="features-grid-container">
-          {features.map((feat, idx) => (
+        <div className="features-grid-container features-grid-4">
+          {igFeatures.map((feat, idx) => (
             <div className="feature-card" key={idx}>
               <div
                 className="feature-icon-wrapper"
@@ -345,12 +407,41 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </section>
 
-      {/* ── How It Works Section (Timeline/Stepper) ── */}
+      {/* ── Telegram Features ── */}
+      <section className="features-section features-section-alt">
+        <div className="section-header">
+          <div className="hero-badge" style={{ margin: "0 auto 4px", background: "rgba(14, 165, 233, 0.06)", borderColor: "rgba(14, 165, 233, 0.2)", color: "#0EA5E9" }}>
+            <Send size={12} />
+            <span>Telegram Automation</span>
+          </div>
+          <h2 className="section-title">Complete Telegram Channel Management</h2>
+          <p className="section-subtitle">
+            Schedule broadcasts, moderate channels, and manage multiple bots from a single unified dashboard.
+          </p>
+        </div>
+
+        <div className="features-grid-container features-grid-4">
+          {tgFeatures.map((feat, idx) => (
+            <div className="feature-card" key={idx}>
+              <div
+                className="feature-icon-wrapper"
+                style={{ backgroundColor: feat.color, color: feat.textColor }}
+              >
+                <feat.icon size={22} />
+              </div>
+              <h3 className="feature-card-title">{feat.title}</h3>
+              <p className="feature-card-desc">{feat.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── How It Works Section ── */}
       <section id="how-it-works" className="timeline-section">
         <div className="section-header">
-          <h2 className="section-title">Three Steps to Automated Success</h2>
+          <h2 className="section-title">Up and Running in Minutes</h2>
           <p className="section-subtitle">
-            No API registrations, no official Facebook App review delays, and no complex configuration files.
+            No API registrations, no Meta app review, no complex configs. Connect, configure, and launch.
           </p>
         </div>
 
@@ -370,30 +461,30 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </section>
 
-      {/* ── System Architecture Visualization ── */}
+      {/* ── System Architecture ── */}
       <section className="architecture-section">
         <div className="architecture-container">
           <div className="arch-text">
             <div className="hero-badge">
               <Cpu size={12} className="text-blue" />
-              <span>Engine Architecture</span>
+              <span>Dual-Platform Architecture</span>
             </div>
-            <h2 className="arch-title">Anti-Detection Automation Stack</h2>
+            <h2 className="arch-title">One Dashboard, Two Platforms</h2>
             <p className="arch-desc">
-              Standard bots trigger algorithms by communicating with private, undocumented endpoints. GramGlide acts completely as an organic client.
+              Lyvora unifies Instagram and Telegram automation behind a single React dashboard, powered by a FastAPI backend with real-time monitoring.
             </p>
             <ul className="arch-list">
               <li>
                 <CheckCircle2 size={16} className="text-green" />
-                <span><strong>No Password Transmissions:</strong> Operates entirely through user-data session cookies exported from active local sessions.</span>
+                <span><strong>Instagram Engine:</strong> Playwright browser automation simulates organic behavior for comment scraping and DM delivery.</span>
               </li>
               <li>
                 <CheckCircle2 size={16} className="text-green" />
-                <span><strong>DOM-Based Interactions:</strong> Employs Playwright triggers to simulate real typing pauses, page scrolling, and clicks.</span>
+                <span><strong>Telegram Engine:</strong> Native Bot API integration for scheduling, broadcasting, and auto-moderation across channels.</span>
               </li>
               <li>
                 <CheckCircle2 size={16} className="text-green" />
-                <span><strong>Cascading Fallbacks:</strong> Three separate outreach workflows configured to ensure messages are delivered regardless of target profiles.</span>
+                <span><strong>Unified Dashboard:</strong> Real-time logs, stats, and controls for both platforms in one place.</span>
               </li>
             </ul>
           </div>
@@ -407,93 +498,33 @@ export default function LandingPage({ onGetStarted }) {
               <div className="flow-arrow"></div>
               <div className="flow-step node-api">
                 <span className="node-icon"><Cpu size={16} /></span>
-                <span className="node-lbl">FastAPI Server</span>
+                <span className="node-lbl">FastAPI Backend</span>
               </div>
-              <div className="flow-arrow"></div>
-              <div className="flow-step node-playwright">
-                <span className="node-icon"><Globe size={16} /></span>
-                <span className="node-lbl">Playwright Engine</span>
-              </div>
-              <div className="flow-arrow"></div>
-              <div className="flow-step node-ig">
-                <span className="node-icon"><Zap size={16} /></span>
-                <span className="node-lbl">Instagram Web</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials Section ── */}
-      <section id="testimonials" className="testimonials-section">
-        <div className="section-header">
-          <div className="hero-badge" style={{ margin: "0 auto 12px" }}>
-            <Users size={12} className="text-orange" />
-            <span>Customer Stories</span>
-          </div>
-          <h2 className="section-title">Loved by Creators & Agencies</h2>
-          <p className="section-subtitle">
-            See how marketers and content creators are scaling outreach and automating direct messages securely.
-          </p>
-        </div>
-
-        <div className="testimonials-grid">
-          <div className="testimonial-card">
-            <div className="stars-row">
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-            </div>
-            <p className="testimonial-quote">
-              "GramGlide is a lifesaver for client campaigns. The session-cookie approach is brilliant—we connected 15+ creator accounts without asking for passwords once, ensuring compliance and peace of mind."
-            </p>
-            <div className="testimonial-author">
-              <div className="author-avatar">AM</div>
-              <div className="author-meta">
-                <p className="author-name">Alex M.</p>
-                <p className="author-handle">@alex_digital_growth</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="testimonial-card">
-            <div className="stars-row">
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-            </div>
-            <p className="testimonial-quote">
-              "Automating comment-to-DM flows for my Reels has boosted sales leads by 400%. The random delay spaces keep it extremely safe, and setting up Synonyms Spintax templates takes seconds."
-            </p>
-            <div className="testimonial-author">
-              <div className="author-avatar orange">JC</div>
-              <div className="author-meta">
-                <p className="author-name">Jessica C.</p>
-                <p className="author-handle">@jessica.creatives</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="testimonial-card">
-            <div className="stars-row">
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-              <span className="star">★</span>
-            </div>
-            <p className="testimonial-quote">
-              "The cascading delivery strategy is unmatched. When Instagram hides direct message options on profiles, the bot automatically triggers failovers to direct inbox searches. Outstanding engineering work by NLR!"
-            </p>
-            <div className="testimonial-author">
-              <div className="author-avatar green">SR</div>
-              <div className="author-meta">
-                <p className="author-name">Sanjay R.</p>
-                <p className="author-handle">@sanjay_media_group</p>
+              <div className="flow-split">
+                <div className="flow-branch">
+                  <div className="flow-arrow"></div>
+                  <div className="flow-step node-playwright">
+                    <span className="node-icon"><Globe size={16} /></span>
+                    <span className="node-lbl">Playwright</span>
+                  </div>
+                  <div className="flow-arrow"></div>
+                  <div className="flow-step node-ig">
+                    <span className="node-icon"><Camera size={16} /></span>
+                    <span className="node-lbl">Instagram</span>
+                  </div>
+                </div>
+                <div className="flow-branch">
+                  <div className="flow-arrow"></div>
+                  <div className="flow-step node-tg-api">
+                    <span className="node-icon"><Bot size={16} /></span>
+                    <span className="node-lbl">Bot API</span>
+                  </div>
+                  <div className="flow-arrow"></div>
+                  <div className="flow-step node-telegram">
+                    <span className="node-icon"><Send size={16} /></span>
+                    <span className="node-lbl">Telegram</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -504,12 +535,12 @@ export default function LandingPage({ onGetStarted }) {
       <section id="pricing" className="pricing-section">
         <div className="section-header">
           <div className="hero-badge" style={{ margin: "0 auto 12px", background: "rgba(16, 185, 129, 0.08)", borderColor: "rgba(16, 185, 129, 0.2)", color: "var(--lp-green)" }}>
-            <Sparkles size={12} />
-            <span>100% Free Testing Phase</span>
+            <Gift size={12} />
+            <span>Free Beta - No Credit Card</span>
           </div>
-          <h2 className="section-title">Transparent, Flexible Pricing Plans</h2>
+          <h2 className="section-title">Everything Free During Beta</h2>
           <p className="section-subtitle">
-            All premium tiers are currently <strong>100% free</strong> during our active beta testing version! No credit card is required.
+            All premium features are <strong>100% free</strong> while we're in Beta. Help us build the best automation platform and lock in founding member pricing.
           </p>
         </div>
 
@@ -559,7 +590,7 @@ export default function LandingPage({ onGetStarted }) {
         <div className="section-header">
           <h2 className="section-title">Frequently Asked Questions</h2>
           <p className="section-subtitle">
-            Everything you need to know about cookie-based automation, security safety, and message loops.
+            Everything you need to know about Lyvora's Instagram + Telegram automation platform.
           </p>
         </div>
 
@@ -583,13 +614,17 @@ export default function LandingPage({ onGetStarted }) {
       {/* ── Call To Action Banner ── */}
       <section className="cta-banner">
         <div className="cta-banner-content">
-          <h2>Ready to Scale Your Instagram Engagement?</h2>
+          <div className="cta-beta-badge">
+            <Rocket size={16} />
+            <span>Free Beta Access</span>
+          </div>
+          <h2>Automate Instagram + Telegram Today</h2>
           <p>
-            Join thousands of creators using cookie-based automated direct messaging. Start setting up triggers within 5 minutes.
+            Join the Beta and unlock all premium features for free. No credit card, no commitments. Start automating in under 5 minutes.
           </p>
           <div className="cta-buttons">
             <button className="landing-btn landing-btn-primary landing-btn-lg btn-white-accent" onClick={onGetStarted}>
-              Get Started Now (No Card Required)
+              Start Free Beta Now
             </button>
           </div>
         </div>
@@ -603,10 +638,10 @@ export default function LandingPage({ onGetStarted }) {
               <div className="nav-logo-icon">
                 <Zap size={16} fill="#F97316" stroke="none" />
               </div>
-              <span>GramGlide</span>
+              <span>Lyvora</span>
             </div>
             <p className="footer-about">
-              Modern passwordless Instagram DM trigger automation engine designed for marketers, creators, and client outreach channels.
+              Leading Your Vision with Optimized Reliable Automation. Unified Instagram + Telegram platform for comment-triggered DMs, channel scheduling, auto-moderation, and real-time analytics.
             </p>
           </div>
 
@@ -628,7 +663,7 @@ export default function LandingPage({ onGetStarted }) {
         </div>
 
         <div className="footer-bottom">
-          <p>© {new Date().getFullYear()} GramGlide. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} Lyvora. All rights reserved.</p>
           <p className="company-credit">
             Developed with excellence by <strong>NLR GROUP OF COMPANIES</strong>
           </p>

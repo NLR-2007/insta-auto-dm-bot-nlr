@@ -126,7 +126,7 @@ export default function Settings() {
       <div className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         <div>
           <h3 style={{ fontSize: "18px", fontWeight: "700", display: "flex", gap: "8px", alignItems: "center" }}>
-            <Shield size={20} style={{ color: "var(--accent)" }} /> GramGlide Configurations
+            <Shield size={20} style={{ color: "var(--accent)" }} /> Lyvora Configurations
           </h3>
           <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "4px" }}>
             Configure delivery rules, security compliance, and messaging adapters.

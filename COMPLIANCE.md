@@ -1,14 +1,14 @@
-# GramGlide Compliance & Platform Safety Framework
+# Lyvora Compliance & Platform Safety Framework
 
-GramGlide is a premium Instagram Direct Message (DM) and engagement automation system designed specifically for the India-first creator and education market. 
+Lyvora is a premium Instagram Direct Message (DM) and engagement automation system designed specifically for the India-first creator and education market. 
 
-To ensure absolute safety, platform stability, and alignment with digital privacy laws (such as GDPR, CCPA, and Meta's Platform Policies), GramGlide operates under a strict **Dual-Engine Architecture** and enforces **Consent-First outreach**.
+To ensure absolute safety, platform stability, and alignment with digital privacy laws (such as GDPR, CCPA, and Meta's Platform Policies), Lyvora operates under a strict **Dual-Engine Architecture** and enforces **Consent-First outreach**.
 
 ---
 
 ## ⚖️ Dual-Engine Architecture
 
-To reconcile different usage levels, GramGlide supports two distinct operating modes:
+To reconcile different usage levels, Lyvora supports two distinct operating modes:
 
 ### 1. Enterprise Mode (Official Meta API Integration) - Recommended
 * **Mechanism**: Operates using Meta's official **Instagram Graph API** and **Messenger Platform**.
@@ -27,25 +27,25 @@ To reconcile different usage levels, GramGlide supports two distinct operating m
 
 ## 🔒 Legal & Regulatory Alignment
 
-GramGlide is engineered to remain compliant with global anti-spam regulations (CAN-SPAM, TCPA, and GDPR/CCPA):
+Lyvora is engineered to remain compliant with global anti-spam regulations (CAN-SPAM, TCPA, and GDPR/CCPA):
 
 ### 1. Explicit Consent Opt-In (Comment Triggers)
 Automated DMs are strictly dispatched **only** when a recipient performs an explicit action (such as leaving a comment with a specific keyword like "JAVA" or "INFO"). 
 * This action constitutes a user-initiated request for specific resources (e.g., download links, curriculum details).
 * Sending a direct, single response to a user-initiated trigger is legally categorized as a transaction/relational reply rather than unsolicited bulk spam.
-* **GramGlide prohibits cold spamming.** The software does not permit cold blasting of random user lists.
+* **Lyvora prohibits cold spamming.** The software does not permit cold blasting of random user lists.
 
 ### 2. Immediate Opt-Out Support (Unsubscribe Blocklist)
-GramGlide includes an automated **Opt-Out Blocklist**:
+Lyvora includes an automated **Opt-Out Blocklist**:
 * Users can configure unsubscribe keywords (e.g., `STOP`, `UNSUBSCRIBE`, `OPTOUT`).
 * If a recipient comments or replies to a DM with any of these keywords, the system immediately adds their username to the database blocklist.
-* Once blocklisted, the database filters out that username. GramGlide's outbound message dispatchers will automatically abort any outreach attempt to a blocklisted user.
+* Once blocklisted, the database filters out that username. Lyvora's outbound message dispatchers will automatically abort any outreach attempt to a blocklisted user.
 
 ---
 
 ## 🛡️ Platform Integrity & Anti-Spam Guardrails
 
-To protect creators and the integrity of Instagram, GramGlide enforces strict boundary controls:
+To protect creators and the integrity of Instagram, Lyvora enforces strict boundary controls:
 
 | Feature | Playwright Sandbox Mode | Official Meta API Mode |
 |---|---|---|

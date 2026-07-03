@@ -153,6 +153,16 @@ class TgScheduledPostCreate(BaseModel):
     recurrence_rule: Optional[str] = None
     batch_messages: Optional[list] = None
 
+class TgScheduledPostUpdate(BaseModel):
+    content: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    message_type: Optional[str] = None
+    media_type: Optional[str] = None
+    media_path: Optional[str] = None
+    is_recurring: Optional[bool] = None
+    recurrence_rule: Optional[str] = None
+    batch_messages: Optional[list] = None
+
 class TgModerationRuleCreate(BaseModel):
     channel_id: int
     rule_type: str = Field(..., min_length=1)

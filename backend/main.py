@@ -19,7 +19,7 @@ from backend.schemas import (
     AccountSchema, AccountResponse, MonitoredPostCreate, MonitoredPostResponse,
     TargetCreateSchema, TargetResponse, MessageTemplateSchema, MessageTemplateResponse,
     AdminUserDetailResponse, AdminSystemStatsResponse,
-    TgBotConfigCreate, TgScheduledPostCreate, TgModerationRuleCreate,
+    TgBotConfigCreate, TgScheduledPostCreate, TgScheduledPostUpdate, TgModerationRuleCreate,
     NotificationResponse, MediaFileResponse,
     ContactCreate, ContactUpdate, ContactResponse,
     FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagResponse,
@@ -1469,6 +1469,7 @@ def tg_list_posts(current_user: User = Depends(get_current_user), workspace: Wor
             "error_message": p.error_message,
             "sent_at": p.sent_at.isoformat() if p.sent_at else None,
             "created_at": p.created_at.isoformat(),
+            "channel_id": p.channel_id,
             "channel_title": channel_map.get(p.channel_id, "Unknown"),
         }
         for p in posts
@@ -1492,6 +1493,37 @@ def tg_cancel_post(post_id: int, current_user: User = Depends(get_current_user),
         db.delete(post)
         db.commit()
     return {"ok": True}
+
+
+@app.patch("/api/tg/posts/{post_id}")
+def tg_update_post(post_id: int, req: TgScheduledPostUpdate, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(require_workspace_role("owner", "admin", "member")), db: Session = Depends(get_db)):
+    post = db.query(TgScheduledPost).filter(TgScheduledPost.id == post_id).first()
+    if not post:
+        raise HTTPException(404, "Post not found")
+    channel = post.channel
+    if channel.bot.user_id != current_user.id or channel.bot.workspace_id != workspace.id:
+        raise HTTPException(403, "Not your post")
+    if post.status != "pending":
+        raise HTTPException(400, "Only pending posts can be edited")
+    if req.content is not None:
+        post.content = req.content
+    if req.scheduled_at is not None:
+        post.scheduled_at = req.scheduled_at
+    if req.message_type is not None:
+        post.message_type = req.message_type
+    if req.media_type is not None:
+        post.media_type = req.media_type
+    if req.media_path is not None:
+        post.media_path = req.media_path
+    if req.is_recurring is not None:
+        post.is_recurring = req.is_recurring
+    if req.recurrence_rule is not None:
+        post.recurrence_rule = req.recurrence_rule
+    if req.batch_messages is not None:
+        post.batch_messages = json.dumps(req.batch_messages)
+    db.commit()
+    db.refresh(post)
+    return {"id": post.id, "status": post.status, "scheduled_at": post.scheduled_at.isoformat()}
 
 
 @app.post("/api/tg/posts/{post_id}/send-now")

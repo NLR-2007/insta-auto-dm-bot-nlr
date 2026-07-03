@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch, apiUpload, getApiUrl } from "../api";
 import {
-  CalendarClock, Plus, Send, Trash2,
+  CalendarClock, Plus, Send, Trash2, Edit2,
   CheckCircle, XCircle, Clock, Repeat, X,
   MessageSquare, Image, FileText, Layers,
   Bold, Italic, Code, Link2, Strikethrough, Underline,
@@ -131,6 +131,7 @@ export default function TgSchedule() {
   const [posts, setPosts] = useState([]);
   const [channels, setChannels] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState({
     channel_id: "", content: "", scheduled_at: "", message_type: "text",
     is_recurring: false, recurrence_rule: "",
@@ -160,6 +161,7 @@ export default function TgSchedule() {
     setBatchMessages([{ content: "", media_type: "text", file: null, filePreview: null }]);
     setError("");
     setShowPreview(false);
+    setEditingId(null);
   };
 
   const handleFileSelect = (file) => {
@@ -176,6 +178,25 @@ export default function TgSchedule() {
   const uploadFile = async (file) => {
     const result = await apiUpload("/api/tg/upload", file);
     return result.filename;
+  };
+
+  const handleEdit = (post) => {
+    const scheduledUtc = post.scheduled_at.endsWith("Z") ? post.scheduled_at : post.scheduled_at + "Z";
+    const localDate = new Date(scheduledUtc);
+    const pad = (n) => String(n).padStart(2, "0");
+    const localStr = `${localDate.getFullYear()}-${pad(localDate.getMonth() + 1)}-${pad(localDate.getDate())}T${pad(localDate.getHours())}:${pad(localDate.getMinutes())}`;
+    setForm({
+      channel_id: String(post.channel_id),
+      content: post.content,
+      scheduled_at: localStr,
+      message_type: post.message_type || "text",
+      is_recurring: post.is_recurring,
+      recurrence_rule: post.recurrence_rule || "",
+    });
+    setEditingId(post.id);
+    setShowForm(true);
+    setMediaFile(null);
+    setMediaPreview(null);
   };
 
   const handleCreate = async (e) => {
@@ -220,7 +241,11 @@ export default function TgSchedule() {
         payload.batch_messages = processedBatch;
       }
 
-      await apiFetch("/api/tg/posts/schedule", { method: "POST", body: JSON.stringify(payload) });
+      if (editingId) {
+        await apiFetch(`/api/tg/posts/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await apiFetch("/api/tg/posts/schedule", { method: "POST", body: JSON.stringify(payload) });
+      }
       setShowForm(false);
       resetForm();
       fetchData();
@@ -272,7 +297,7 @@ export default function TgSchedule() {
     <div className="tg-section">
       <div className="tg-section-header">
         <h3 className="tg-section-title"><CalendarClock size={18} /> Scheduled Messages</h3>
-        <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: "12px" }} onClick={() => { setShowForm(!showForm); if (showForm) resetForm(); }}>
+        <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: "12px" }} onClick={() => { if (showForm) { resetForm(); setShowForm(false); } else { resetForm(); setShowForm(true); } }}>
           {showForm ? <><X size={13} /> Cancel</> : <><Plus size={13} /> New</>}
         </button>
       </div>
@@ -455,7 +480,7 @@ export default function TgSchedule() {
 
             {/* ── Submit ── */}
             <button type="submit" className="btn btn-primary" disabled={saving} style={{ padding: "10px 24px", fontSize: "13px", fontWeight: 700 }}>
-              <Send size={14} /> {saving ? "Uploading & Scheduling..." : "Schedule Message"}
+              <Send size={14} /> {saving ? (editingId ? "Saving..." : "Uploading & Scheduling...") : (editingId ? "Update Message" : "Schedule Message")}
             </button>
           </form>
         </div>
@@ -508,9 +533,14 @@ export default function TgSchedule() {
                   )}
                   <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
                     {post.status === "pending" && (
-                      <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleSendNow(post.id)}>
-                        <Send size={11} /> Send Now
-                      </button>
+                      <>
+                        <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleEdit(post)}>
+                          <Edit2 size={11} /> Edit
+                        </button>
+                        <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleSendNow(post.id)}>
+                          <Send size={11} /> Send Now
+                        </button>
+                      </>
                     )}
                     <button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleDelete(post.id)}>
                       <Trash2 size={11} />

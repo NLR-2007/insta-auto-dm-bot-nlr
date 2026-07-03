@@ -8,6 +8,10 @@ import CommentTriggers from "./components/CommentTriggers";
 import AdminPanel from "./components/AdminPanel";
 import AuthPage from "./components/AuthPage";
 import TelegramPanel from "./components/TelegramPanel";
+import MediaLibrary from "./components/MediaLibrary";
+import NotificationCenter from "./components/NotificationCenter";
+import ContactCRM from "./components/ContactCRM";
+import ContentCalendar from "./components/ContentCalendar";
 import LandingPage from "./components/LandingPage";
 import LegalPrivacy from "./components/LegalPrivacy";
 import TermsConditions from "./components/TermsConditions";
@@ -15,7 +19,8 @@ import LegalDisclaimer from "./components/LegalDisclaimer";
 import {
   LayoutDashboard, UserCheck, Users, Mail,
   Settings as SettingsIcon, MessageSquare, Menu, X,
-  Shield, LogOut, ChevronDown, Send
+  Shield, LogOut, ChevronDown, Send,
+  Image, Bell, Calendar, Contact
 } from "lucide-react";
 import { getToken, getAuthUser, logout, apiFetch } from "./api";
 
@@ -91,6 +96,10 @@ export default function App() {
     { id: "targets", label: "Targets Queue", icon: Users },
     { id: "messages", label: "DM Templates", icon: Mail },
     { id: "comment-triggers", label: "Comment Triggers", icon: MessageSquare },
+    { id: "contacts", label: "Contacts", icon: Contact },
+    { id: "media", label: "Media Library", icon: Image },
+    { id: "calendar", label: "Content Calendar", icon: Calendar },
+    { id: "notifications", label: "Notifications", icon: Bell },
     { id: "telegram", label: "Telegram", icon: Send, isTelegram: true },
     { id: "settings", label: "Settings", icon: SettingsIcon },
     ...(currentUser?.is_admin
@@ -107,6 +116,10 @@ export default function App() {
       case "targets":          return <Targets />;
       case "messages":         return <Messages />;
       case "comment-triggers": return <CommentTriggers />;
+      case "contacts":         return <ContactCRM />;
+      case "media":            return <MediaLibrary />;
+      case "calendar":         return <ContentCalendar />;
+      case "notifications":    return <NotificationCenter />;
       case "telegram":         return <TelegramPanel />;
       case "settings":         return <Settings />;
       case "admin":            return currentUser?.is_admin ? <AdminPanel /> : <Dashboard />;
@@ -121,6 +134,10 @@ export default function App() {
       targets: "Targets Queue",
       messages: "DM Templates",
       "comment-triggers": "Comment Triggers",
+      contacts: "Contacts CRM",
+      media: "Media Library",
+      calendar: "Content Calendar",
+      notifications: "Notifications",
       telegram: "Telegram Automation",
       settings: "Settings",
       admin: "Admin Panel",
@@ -135,6 +152,10 @@ export default function App() {
       targets: "Queue of users to send DMs to",
       messages: "Create and manage message templates",
       "comment-triggers": "Auto-DM users who comment on posts",
+      contacts: "Manage your audience and leads",
+      media: "Upload and organize media assets",
+      calendar: "View scheduled content on a calendar",
+      notifications: "Stay updated on platform activity",
       telegram: "Manage bots, schedule posts & moderate channels",
       settings: "Configure bot behavior and limits",
       admin: "System management & monitoring",

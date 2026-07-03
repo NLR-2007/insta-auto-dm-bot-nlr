@@ -308,6 +308,71 @@ class TgPostLog(Base):
     channel = relationship("TgChannel")
 
 
+# ── Notification Model ───────────────────────────────────────────────────────
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
+    title = Column(String(200), nullable=False)
+    message = Column(Text, nullable=False)
+    category = Column(String(30), default="info")
+    is_read = Column(Boolean, default=False)
+    link = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Media Library Model ──────────────────────────────────────────────────────
+
+class MediaFile(Base):
+    __tablename__ = "media_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
+    filename = Column(String(255), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    file_type = Column(String(20), nullable=False)
+    mime_type = Column(String(100), nullable=True)
+    file_size = Column(Integer, default=0)
+    folder = Column(String(100), default="general")
+    tags = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Contact CRM Model ────────────────────────────────────────────────────────
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True)
+    username = Column(String(100), nullable=False)
+    platform = Column(String(30), default="instagram")
+    display_name = Column(String(200), nullable=True)
+    tags = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    status = Column(String(30), default="lead")
+    last_contacted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── Feature Flags / Global Config ─────────────────────────────────────────────
+
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, nullable=False)
+    value = Column(String(20), default="on")
+    scope = Column(String(30), default="global")
+    scope_id = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # Dependency to get db session
 def get_db():
     db = SessionLocal()

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { apiFetch, getApiUrl } from "../api";
-import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock, Loader2 } from "lucide-react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock, Loader2, TrendingUp, Users, FileText, UserCheck } from "lucide-react";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 
 export default function Dashboard() {
   const [status, setStatus] = useState({
@@ -18,13 +18,15 @@ export default function Dashboard() {
   const [targetInput, setTargetInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsDays, setAnalyticsDays] = useState(30);
   const logConsoleRef = useRef(null);
 
   const fetchStatusAndLogs = async () => {
     try {
       const statusData = await apiFetch("/api/status");
       setStatus(statusData);
-      
+
       const logsData = await apiFetch("/api/logs?limit=50");
       setLogs(logsData);
     } catch (e) {
@@ -32,13 +34,26 @@ export default function Dashboard() {
     }
   };
 
+  const fetchAnalytics = async () => {
+    try {
+      const data = await apiFetch(`/api/analytics/dashboard?days=${analyticsDays}`);
+      setAnalytics(data);
+    } catch (e) {
+      console.error("Failed to load analytics:", e);
+    }
+  };
+
   useEffect(() => {
     fetchStatusAndLogs();
+    fetchAnalytics();
     const interval = setInterval(fetchStatusAndLogs, 4000);
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-scroll logs to bottom
+  useEffect(() => {
+    fetchAnalytics();
+  }, [analyticsDays]);
+
   useEffect(() => {
     if (logConsoleRef.current) {
       logConsoleRef.current.scrollTop = logConsoleRef.current.scrollHeight;
@@ -88,14 +103,12 @@ export default function Dashboard() {
     }
   };
 
-  // Mock data for Recharts visualizing DM activity
-  const chartData = [
-    { name: "Mon", Sent: Math.max(0, status.total_sent - 15), Failed: 2 },
-    { name: "Tue", Sent: Math.max(0, status.total_sent - 10), Failed: 0 },
-    { name: "Wed", Sent: Math.max(0, status.total_sent - 6), Failed: 1 },
-    { name: "Thu", Sent: Math.max(0, status.total_sent - 3), Failed: 3 },
-    { name: "Fri", Sent: status.total_sent, Failed: status.failed_count },
-  ];
+  const chartData = analytics?.time_series?.map(p => ({
+    name: new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    Sent: p.sent,
+    Failed: p.failed,
+    Pending: p.pending,
+  })) || [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -165,28 +178,56 @@ export default function Dashboard() {
       {/* Stats row */}
       <div className="stats-grid">
         <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--accent)" }}>
-          <div className="stat-label">Sent Today</div>
-          <div className="stat-value">{status.sent_today}</div>
+          <div className="stat-icon" style={{ color: "var(--accent)" }}><TrendingUp size={20} /></div>
+          <div className="stat-label">Total Sent</div>
+          <div className="stat-value">{analytics?.total_sent ?? status.total_sent}</div>
         </div>
         <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--info)" }}>
-          <div className="stat-label">Queue Pending</div>
-          <div className="stat-value">{status.pending_count}</div>
+          <div className="stat-icon" style={{ color: "var(--info)" }}><Clock size={20} /></div>
+          <div className="stat-label">Pending</div>
+          <div className="stat-value">{analytics?.total_pending ?? status.pending_count}</div>
         </div>
         <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--danger)" }}>
-          <div className="stat-label">Failed Deliveries</div>
-          <div className="stat-value">{status.failed_count}</div>
+          <div className="stat-icon" style={{ color: "var(--danger)" }}><AlertTriangle size={20} /></div>
+          <div className="stat-label">Failed</div>
+          <div className="stat-value">{analytics?.total_failed ?? status.failed_count}</div>
         </div>
         <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--success)" }}>
-          <div className="stat-label">Cumulative Sent</div>
-          <div className="stat-value">{status.total_sent}</div>
+          <div className="stat-icon" style={{ color: "var(--success)" }}><Users size={20} /></div>
+          <div className="stat-label">Contacts</div>
+          <div className="stat-value">{analytics?.total_contacts ?? 0}</div>
+        </div>
+        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #8b5cf6" }}>
+          <div className="stat-icon" style={{ color: "#8b5cf6" }}><FileText size={20} /></div>
+          <div className="stat-label">Templates</div>
+          <div className="stat-value">{analytics?.total_templates ?? 0}</div>
+        </div>
+        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #f59e0b" }}>
+          <div className="stat-icon" style={{ color: "#f59e0b" }}><UserCheck size={20} /></div>
+          <div className="stat-label">Accounts</div>
+          <div className="stat-value">{analytics?.total_accounts ?? 0}</div>
         </div>
       </div>
 
       {/* Content Columns */}
       <div className="content-grid cols-2-wider">
         {/* Analytics Chart */}
-        <div className="glass-card" style={{ height: "400px", display: "flex", flexDirection: "column" }}>
-          <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "20px" }}>Campaign Analytics</h3>
+        <div className="glass-card" style={{ height: "420px", display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "600" }}>Campaign Analytics</h3>
+            <div style={{ display: "flex", gap: "6px" }}>
+              {[7, 14, 30].map(d => (
+                <button
+                  key={d}
+                  className={`btn ${analyticsDays === d ? "btn-primary" : "btn-secondary"}`}
+                  style={{ padding: "4px 10px", fontSize: "11px" }}
+                  onClick={() => setAnalyticsDays(d)}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ width: "100%", height: "100%", minHeight: "280px" }}>
             <ResponsiveContainer width="100%" height="90%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -195,19 +236,24 @@ export default function Dashboard() {
                     <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3}/>
                     <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="colorFailed" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--danger)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="var(--danger)" stopOpacity={0}/>
+                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                 <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
                 <YAxis stroke="var(--text-muted)" style={{ fontSize: "12px" }} />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: "var(--bg-secondary)", 
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "var(--bg-secondary)",
                     borderColor: "var(--border-color)",
                     borderRadius: "8px",
-                    color: "var(--text-primary)" 
-                  }} 
+                    color: "var(--text-primary)"
+                  }}
                 />
                 <Area type="monotone" dataKey="Sent" stroke="var(--accent)" fillOpacity={1} fill="url(#colorSent)" />
+                <Area type="monotone" dataKey="Failed" stroke="var(--danger)" fillOpacity={1} fill="url(#colorFailed)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -230,9 +276,9 @@ export default function Dashboard() {
                   onChange={(e) => setTargetInput(e.target.value)}
                 />
               </div>
-              <button 
-                type="submit" 
-                className="btn btn-primary" 
+              <button
+                type="submit"
+                className="btn btn-primary"
                 style={{ width: "100%" }}
                 disabled={loading}
               >

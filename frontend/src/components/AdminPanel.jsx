@@ -3,7 +3,8 @@ import {
   Users, Activity, BarChart2, RefreshCw, Power, Square,
   CheckCircle, XCircle, Clock, TrendingUp, Shield,
   UserCheck, Server, Eye, Trash2, ChevronDown, ChevronUp,
-  Send, Bot, Hash, Play, Pause, ToggleLeft, ToggleRight
+  Send, Bot, Hash, Play, Pause, ToggleLeft, ToggleRight,
+  FileText, Cpu, HardDrive, Database, Flag, Plus, Save, X
 } from "lucide-react";
 import { apiFetch } from "../api";
 
@@ -128,6 +129,14 @@ export default function AdminPanel() {
   const [activeSection, setActiveSection] = useState("overview");
   const [error, setError] = useState("");
 
+  // New state for enhanced sections
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [auditFilter, setAuditFilter] = useState("");
+  const [healthData, setHealthData] = useState(null);
+  const [featureFlags, setFeatureFlags] = useState([]);
+  const [showFlagForm, setShowFlagForm] = useState(false);
+  const [flagForm, setFlagForm] = useState({ key: "", value: "on", scope: "global" });
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -147,11 +156,46 @@ export default function AdminPanel() {
     }
   }, []);
 
+  const fetchAuditLogs = async () => {
+    try {
+      let url = "/api/admin/audit-logs?limit=100";
+      if (auditFilter) url += `&action=${encodeURIComponent(auditFilter)}`;
+      const data = await apiFetch(url);
+      setAuditLogs(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchHealth = async () => {
+    try {
+      const data = await apiFetch("/api/admin/health");
+      setHealthData(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchFlags = async () => {
+    try {
+      const data = await apiFetch("/api/admin/feature-flags");
+      setFeatureFlags(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     fetchAll();
     const interval = setInterval(fetchAll, 15000);
     return () => clearInterval(interval);
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (activeSection === "audit") fetchAuditLogs();
+    if (activeSection === "health") fetchHealth();
+    if (activeSection === "config") fetchFlags();
+  }, [activeSection, auditFilter]);
 
   const handleSystemToggle = async (action) => {
     setSystemAction(action);
@@ -195,11 +239,62 @@ export default function AdminPanel() {
     }
   };
 
+  const handleCreateFlag = async (e) => {
+    e.preventDefault();
+    try {
+      await apiFetch("/api/admin/feature-flags", { method: "POST", body: JSON.stringify(flagForm) });
+      setShowFlagForm(false);
+      setFlagForm({ key: "", value: "on", scope: "global" });
+      fetchFlags();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleToggleFlag = async (flag) => {
+    try {
+      await apiFetch(`/api/admin/feature-flags/${flag.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ value: flag.value === "on" ? "off" : "on" }),
+      });
+      fetchFlags();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleDeleteFlag = async (id) => {
+    if (!confirm("Delete this feature flag?")) return;
+    try {
+      await apiFetch(`/api/admin/feature-flags/${id}`, { method: "DELETE" });
+      fetchFlags();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
   const logColors = { INFO: "#38BDF8", SUCCESS: "#4ADE80", WARNING: "#FBBF24", ERROR: "#F87171", DEBUG: "#A78BFA" };
+
+  const formatBytes = (bytes) => {
+    if (!bytes) return "—";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  };
+
+  const formatUptime = (secs) => {
+    if (!secs) return "—";
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
   const sections = [
     { id: "overview", label: "Overview", icon: BarChart2 },
     { id: "users", label: "Users", icon: Users },
+    { id: "audit", label: "Audit Log", icon: FileText },
+    { id: "health", label: "Health", icon: Cpu },
+    { id: "config", label: "Config", icon: Flag },
     { id: "logs", label: "Logs", icon: Activity },
   ];
 
@@ -241,8 +336,6 @@ export default function AdminPanel() {
       {/* OVERVIEW */}
       {activeSection === "overview" && (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-
-          {/* System Control Center */}
           <div className="glass-card" style={{ borderLeft: "3px solid #2563EB" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
               <div>
@@ -287,7 +380,6 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* Stats Grid - Instagram */}
           <div>
             <p style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "10px" }}>
               Instagram Automation
@@ -307,7 +399,6 @@ export default function AdminPanel() {
             </div>
           </div>
 
-          {/* Stats Grid - Telegram */}
           <div>
             <p style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--text-muted)", marginBottom: "10px" }}>
               Telegram Automation
@@ -363,6 +454,187 @@ export default function AdminPanel() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* AUDIT LOG */}
+      {activeSection === "audit" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="glass-card" style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+            <FileText size={18} />
+            <h2 style={{ fontSize: "15px", fontWeight: 700 }}>Audit Log</h2>
+            <input
+              className="form-input"
+              placeholder="Filter by action..."
+              value={auditFilter}
+              onChange={e => setAuditFilter(e.target.value)}
+              style={{ marginLeft: "auto", maxWidth: "220px" }}
+            />
+          </div>
+          <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>User ID</th>
+                    <th>Entity</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px" }}>No audit logs</td></tr>
+                  ) : (
+                    auditLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ fontSize: "11px", whiteSpace: "nowrap" }}>
+                          {new Date(log.created_at).toLocaleString()}
+                        </td>
+                        <td><span className="badge" style={{ fontSize: "10px" }}>{log.action}</span></td>
+                        <td>{log.user_id ?? "—"}</td>
+                        <td>{log.entity_type ? `${log.entity_type}#${log.entity_id}` : "—"}</td>
+                        <td style={{ maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px", fontFamily: "monospace" }}>
+                          {log.metadata_json || "—"}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SYSTEM HEALTH */}
+      {activeSection === "health" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Cpu size={18} />
+              <h2 style={{ fontSize: "15px", fontWeight: 700 }}>System Health</h2>
+            </div>
+            <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={fetchHealth}>
+              <RefreshCw size={13} /> Refresh
+            </button>
+          </div>
+          {healthData ? (
+            <div className="stats-grid">
+              <StatCard icon={Server} label="Platform" value={healthData.platform || "—"} color="#0F172A" sub={`Python ${healthData.python_version || "?"}`} />
+              <StatCard icon={Cpu} label="CPU" value={healthData.cpu_percent != null ? `${healthData.cpu_percent}%` : "—"} color={healthData.cpu_percent > 80 ? "#DC2626" : "#16A34A"} />
+              <StatCard icon={HardDrive} label="Memory" value={healthData.memory ? `${healthData.memory.percent}%` : "—"} color={healthData.memory?.percent > 80 ? "#DC2626" : "#2563EB"} sub={healthData.memory ? `${formatBytes(healthData.memory.used)} / ${formatBytes(healthData.memory.total)}` : ""} />
+              <StatCard icon={HardDrive} label="Disk" value={healthData.disk ? `${healthData.disk.percent}%` : "—"} color={healthData.disk?.percent > 90 ? "#DC2626" : "#0EA5E9"} sub={healthData.disk ? `${formatBytes(healthData.disk.used)} / ${formatBytes(healthData.disk.total)}` : ""} />
+              <StatCard icon={Database} label="DB Size" value={formatBytes(healthData.db_size_bytes)} color="#8b5cf6" />
+              <StatCard icon={Clock} label="Uptime" value={formatUptime(healthData.uptime_seconds)} color="#16A34A" />
+            </div>
+          ) : (
+            <div className="glass-card" style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>Loading health data...</div>
+          )}
+
+          <div className="glass-card">
+            <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px" }}>Service Status</h3>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+              {[
+                { label: "Instagram Bot", running: healthData?.ig_bot_running },
+                { label: "Telegram Service", running: healthData?.tg_service_running },
+              ].map(s => (
+                <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)" }}>
+                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: s.running ? "var(--success)" : "var(--danger)", boxShadow: s.running ? "0 0 6px var(--success)" : "none" }} />
+                  <span style={{ fontSize: "13px", fontWeight: "500" }}>{s.label}</span>
+                  <span style={{ fontSize: "12px", color: s.running ? "var(--success)" : "var(--text-muted)" }}>
+                    {s.running ? "Running" : "Stopped"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEATURE FLAGS / CONFIG */}
+      {activeSection === "config" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <div className="glass-card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <Flag size={18} />
+              <h2 style={{ fontSize: "15px", fontWeight: 700 }}>Feature Flags</h2>
+            </div>
+            <button className="btn btn-primary" style={{ padding: "6px 14px", fontSize: "12px" }} onClick={() => setShowFlagForm(!showFlagForm)}>
+              <Plus size={13} /> New Flag
+            </button>
+          </div>
+
+          {showFlagForm && (
+            <div className="glass-card">
+              <form onSubmit={handleCreateFlag} style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div className="form-group" style={{ flex: 1, minWidth: "150px" }}>
+                  <label className="form-label">Key</label>
+                  <input className="form-input" value={flagForm.key} onChange={e => setFlagForm({ ...flagForm, key: e.target.value })} required placeholder="e.g. maintenance_mode" />
+                </div>
+                <div className="form-group" style={{ minWidth: "100px" }}>
+                  <label className="form-label">Value</label>
+                  <select className="form-select" value={flagForm.value} onChange={e => setFlagForm({ ...flagForm, value: e.target.value })}>
+                    <option value="on">On</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ minWidth: "100px" }}>
+                  <label className="form-label">Scope</label>
+                  <select className="form-select" value={flagForm.scope} onChange={e => setFlagForm({ ...flagForm, scope: e.target.value })}>
+                    <option value="global">Global</option>
+                    <option value="workspace">Workspace</option>
+                    <option value="user">User</option>
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ padding: "8px 16px" }}><Save size={14} /> Create</button>
+                <button type="button" className="btn btn-secondary" style={{ padding: "8px" }} onClick={() => setShowFlagForm(false)}><X size={14} /></button>
+              </form>
+            </div>
+          )}
+
+          <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr><th>Key</th><th>Value</th><th>Scope</th><th>Updated</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  {featureFlags.length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px" }}>No feature flags configured</td></tr>
+                  ) : (
+                    featureFlags.map(f => (
+                      <tr key={f.id}>
+                        <td style={{ fontWeight: "600", fontFamily: "monospace", fontSize: "12px" }}>{f.key}</td>
+                        <td>
+                          <span
+                            className={`badge ${f.value === "on" ? "badge-sent" : "badge-failed"}`}
+                            style={{ fontSize: "10px", cursor: "pointer" }}
+                            onClick={() => handleToggleFlag(f)}
+                          >
+                            {f.value.toUpperCase()}
+                          </span>
+                        </td>
+                        <td><span className="badge" style={{ fontSize: "10px" }}>{f.scope}{f.scope_id ? `#${f.scope_id}` : ""}</span></td>
+                        <td style={{ fontSize: "11px" }}>{new Date(f.updated_at).toLocaleString()}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: "4px" }}>
+                            <button className="btn btn-secondary" style={{ padding: "4px 8px" }} onClick={() => handleToggleFlag(f)}>
+                              {f.value === "on" ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                            </button>
+                            <button className="btn btn-danger" style={{ padding: "4px 8px" }} onClick={() => handleDeleteFlag(f.id)}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

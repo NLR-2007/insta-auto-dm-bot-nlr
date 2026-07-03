@@ -157,3 +157,125 @@ class TgModerationRuleCreate(BaseModel):
     channel_id: int
     rule_type: str = Field(..., min_length=1)
     config: str
+
+
+# ── Notification Schemas ─────────────────────────────────────────────────────
+
+class NotificationResponse(BaseModel):
+    id: int
+    title: str
+    message: str
+    category: str
+    is_read: bool
+    link: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Media Library Schemas ────────────────────────────────────────────────────
+
+class MediaFileResponse(BaseModel):
+    id: int
+    filename: str
+    original_name: str
+    file_type: str
+    mime_type: Optional[str] = None
+    file_size: int
+    folder: str
+    tags: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Contact CRM Schemas ─────────────────────────────────────────────────────
+
+class ContactCreate(BaseModel):
+    username: str = Field(..., min_length=1, max_length=100)
+    platform: str = "instagram"
+    display_name: Optional[str] = None
+    tags: Optional[str] = None
+    notes: Optional[str] = None
+    status: str = "lead"
+
+class ContactUpdate(BaseModel):
+    display_name: Optional[str] = None
+    tags: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
+class ContactResponse(BaseModel):
+    id: int
+    username: str
+    platform: str
+    display_name: Optional[str] = None
+    tags: Optional[str] = None
+    notes: Optional[str] = None
+    status: str
+    last_contacted_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Feature Flag Schemas ─────────────────────────────────────────────────────
+
+class FeatureFlagCreate(BaseModel):
+    key: str = Field(..., min_length=1, max_length=100)
+    value: str = "on"
+    scope: str = "global"
+    scope_id: Optional[int] = None
+
+class FeatureFlagUpdate(BaseModel):
+    value: Optional[str] = None
+    scope: Optional[str] = None
+    scope_id: Optional[int] = None
+
+class FeatureFlagResponse(BaseModel):
+    id: int
+    key: str
+    value: str
+    scope: str
+    scope_id: Optional[int] = None
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Analytics Schemas ────────────────────────────────────────────────────────
+
+class AnalyticsPointSchema(BaseModel):
+    date: str
+    sent: int
+    failed: int
+    pending: int
+
+class AnalyticsDashboardResponse(BaseModel):
+    total_sent: int
+    total_failed: int
+    total_pending: int
+    total_contacts: int
+    total_templates: int
+    total_accounts: int
+    time_series: List[AnalyticsPointSchema]
+
+
+# ── Audit Log Schema ────────────────────────────────────────────────────────
+
+class AuditLogResponse(BaseModel):
+    id: int
+    action: str
+    user_id: Optional[int] = None
+    workspace_id: Optional[int] = None
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+    metadata_json: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

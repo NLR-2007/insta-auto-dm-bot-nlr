@@ -12,3 +12,4 @@ passlib[bcrypt]>=1.7.4
 python-jose[cryptography]>=3.3.0
 email-validator>=2.1.0
 cryptography>=42.0.0
+psutil>=5.9.0

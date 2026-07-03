@@ -13,13 +13,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.config import cors_origins, validate_runtime_config
-from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut, User, TgBotConfig, TgChannel, TgScheduledPost, TgModerationRule, TgPostLog, Workspace, WorkspaceMember, Subscription, Campaign, AutomationRunner, AuditLog
+from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut, User, TgBotConfig, TgChannel, TgScheduledPost, TgModerationRule, TgPostLog, Workspace, WorkspaceMember, Subscription, Campaign, AutomationRunner, AuditLog, Notification, MediaFile, Contact, FeatureFlag
 from backend.schemas import (
     UserRegisterSchema, UserLoginSchema, TokenResponse, UserResponseSchema,
     AccountSchema, AccountResponse, MonitoredPostCreate, MonitoredPostResponse,
     TargetCreateSchema, TargetResponse, MessageTemplateSchema, MessageTemplateResponse,
     AdminUserDetailResponse, AdminSystemStatsResponse,
     TgBotConfigCreate, TgScheduledPostCreate, TgModerationRuleCreate,
+    NotificationResponse, MediaFileResponse,
+    ContactCreate, ContactUpdate, ContactResponse,
+    FeatureFlagCreate, FeatureFlagUpdate, FeatureFlagResponse,
+    AnalyticsDashboardResponse, AnalyticsPointSchema, AuditLogResponse,
 )
 from backend.auth import (
     verify_password, get_password_hash, create_access_token,
@@ -38,8 +42,9 @@ async def lifespan(app: FastAPI):
     # Initialize DB tables and default settings
     init_db()
 
+    app.state.start_time = time.time()
     log_to_db("INFO", "FastAPI server started. DB initialized.")
-    
+
     # Auto-start Telegram Service
     try:
         await telegram_service.start()
@@ -1010,7 +1015,7 @@ def delete_optout(id: int, current_user: User = Depends(get_current_user), works
     db.commit()
     return {"message": "Blocklist entry removed."}
 
-# Settings Control (Admin Protected)
+# Settings Control
 @app.get("/api/settings")
 def get_settings(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     settings_dict = {}
@@ -1026,7 +1031,7 @@ def get_settings(current_user: User = Depends(get_current_user), db: Session = D
     return settings_dict
 
 @app.post("/api/settings")
-def update_settings(payload: SettingUpdateSchema, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+def update_settings(payload: SettingUpdateSchema, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     items = {
         "daily_limit": str(payload.daily_limit),
         "min_delay": str(payload.min_delay),
@@ -1048,7 +1053,7 @@ def update_settings(payload: SettingUpdateSchema, current_admin: User = Depends(
         else:
             db.add(Setting(key=k, value=v))
     db.commit()
-    log_to_db("INFO", "Admin updated bot settings configuration parameters.")
+    log_to_db("INFO", f"User '{current_user.username}' updated bot settings.")
     return {"message": "Settings saved successfully."}
 
 @app.get("/api/logs", response_model=List[LogResponse])
@@ -1602,3 +1607,434 @@ async def tg_stop_service(current_admin: User = Depends(get_current_admin)):
 @app.get("/api/tg/service/status")
 def tg_service_status():
     return {"running": telegram_service.is_running}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Analytics Dashboard ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/analytics/dashboard", response_model=AnalyticsDashboardResponse)
+def analytics_dashboard(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    from datetime import timedelta
+    from sqlalchemy import func, cast, Date
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    base_q = db.query(Target).join(Account).filter(
+        Account.workspace_id == workspace.id,
+        Target.created_at >= cutoff,
+    )
+
+    total_sent = base_q.filter(Target.status == "sent").count()
+    total_failed = base_q.filter(Target.status == "failed").count()
+    total_pending = base_q.filter(Target.status == "pending").count()
+    total_contacts = db.query(Contact).filter(Contact.workspace_id == workspace.id).count()
+    total_templates = db.query(MessageTemplate).filter(MessageTemplate.workspace_id == workspace.id).count()
+    total_accounts = db.query(Account).filter(Account.workspace_id == workspace.id).count()
+
+    rows = (
+        db.query(
+            func.date(Target.created_at).label("day"),
+            Target.status,
+            func.count(Target.id),
+        )
+        .join(Account)
+        .filter(Account.workspace_id == workspace.id, Target.created_at >= cutoff)
+        .group_by(func.date(Target.created_at), Target.status)
+        .all()
+    )
+
+    day_map: Dict[str, dict] = {}
+    for day_val, st, cnt in rows:
+        d = str(day_val)
+        if d not in day_map:
+            day_map[d] = {"date": d, "sent": 0, "failed": 0, "pending": 0}
+        if st in day_map[d]:
+            day_map[d][st] += cnt
+
+    time_series = sorted(day_map.values(), key=lambda x: x["date"])
+
+    return AnalyticsDashboardResponse(
+        total_sent=total_sent,
+        total_failed=total_failed,
+        total_pending=total_pending,
+        total_contacts=total_contacts,
+        total_templates=total_templates,
+        total_accounts=total_accounts,
+        time_series=[AnalyticsPointSchema(**p) for p in time_series],
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Notification Center ──────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/notifications", response_model=List[NotificationResponse])
+def list_notifications(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+@app.get("/api/notifications/unread-count")
+def notification_unread_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    count = db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+    ).count()
+    return {"count": count}
+
+
+@app.patch("/api/notifications/{notif_id}/read")
+def mark_notification_read(
+    notif_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    n = db.query(Notification).filter(
+        Notification.id == notif_id,
+        Notification.user_id == current_user.id,
+    ).first()
+    if not n:
+        raise HTTPException(404, "Notification not found")
+    n.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/notifications/read-all")
+def mark_all_notifications_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+    ).update({"is_read": True}, synchronize_session=False)
+    db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Media Library ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+MEDIA_DIR = os.path.join(os.path.dirname(__file__), "uploads", "media")
+os.makedirs(MEDIA_DIR, exist_ok=True)
+
+
+@app.post("/api/media/upload", response_model=MediaFileResponse)
+async def upload_media(
+    file: UploadFile = File(...),
+    folder: str = "general",
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    ext = os.path.splitext(file.filename or "file")[1].lower()
+    allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mp3", ".pdf", ".svg"}
+    if ext not in allowed:
+        raise HTTPException(400, f"File type {ext} not allowed")
+
+    content = await file.read()
+    max_size = 25 * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(400, "File too large (max 25 MB)")
+
+    unique_name = f"{int(time.time())}_{secrets.token_hex(6)}{ext}"
+    file_path = os.path.join(MEDIA_DIR, unique_name)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    file_type = "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"} else "video" if ext == ".mp4" else "audio" if ext == ".mp3" else "document"
+
+    media = MediaFile(
+        user_id=current_user.id,
+        workspace_id=workspace.id,
+        filename=unique_name,
+        original_name=file.filename or "file",
+        file_type=file_type,
+        mime_type=file.content_type,
+        file_size=len(content),
+        folder=folder,
+    )
+    db.add(media)
+    db.commit()
+    db.refresh(media)
+    return media
+
+
+@app.get("/api/media", response_model=List[MediaFileResponse])
+def list_media(
+    folder: Optional[str] = None,
+    file_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    q = db.query(MediaFile).filter(MediaFile.workspace_id == workspace.id)
+    if folder:
+        q = q.filter(MediaFile.folder == folder)
+    if file_type:
+        q = q.filter(MediaFile.file_type == file_type)
+    return q.order_by(MediaFile.created_at.desc()).all()
+
+
+@app.get("/api/media/{media_id}/file")
+def serve_media_file(media_id: int, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(get_current_workspace), db: Session = Depends(get_db)):
+    from fastapi.responses import FileResponse as FastAPIFileResponse
+
+    media = db.query(MediaFile).filter(MediaFile.id == media_id, MediaFile.workspace_id == workspace.id).first()
+    if not media:
+        raise HTTPException(404, "File not found")
+    path = os.path.join(MEDIA_DIR, media.filename)
+    if not os.path.exists(path):
+        raise HTTPException(404, "File missing from disk")
+    return FastAPIFileResponse(path, media_type=media.mime_type, filename=media.original_name)
+
+
+@app.delete("/api/media/{media_id}")
+def delete_media(media_id: int, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(get_current_workspace), db: Session = Depends(get_db)):
+    media = db.query(MediaFile).filter(MediaFile.id == media_id, MediaFile.workspace_id == workspace.id).first()
+    if not media:
+        raise HTTPException(404, "File not found")
+    path = os.path.join(MEDIA_DIR, media.filename)
+    if os.path.exists(path):
+        os.remove(path)
+    db.delete(media)
+    db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Contact CRM ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/contacts", response_model=List[ContactResponse])
+def list_contacts(
+    status: Optional[str] = None,
+    platform: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    q = db.query(Contact).filter(Contact.workspace_id == workspace.id)
+    if status:
+        q = q.filter(Contact.status == status)
+    if platform:
+        q = q.filter(Contact.platform == platform)
+    if search:
+        q = q.filter(Contact.username.ilike(f"%{search}%") | Contact.display_name.ilike(f"%{search}%"))
+    return q.order_by(Contact.created_at.desc()).all()
+
+
+@app.post("/api/contacts", response_model=ContactResponse)
+def create_contact(
+    payload: ContactCreate,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    contact = Contact(
+        user_id=current_user.id,
+        workspace_id=workspace.id,
+        username=payload.username,
+        platform=payload.platform,
+        display_name=payload.display_name,
+        tags=payload.tags,
+        notes=payload.notes,
+        status=payload.status,
+    )
+    db.add(contact)
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+@app.patch("/api/contacts/{contact_id}", response_model=ContactResponse)
+def update_contact(
+    contact_id: int,
+    payload: ContactUpdate,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    c = db.query(Contact).filter(Contact.id == contact_id, Contact.workspace_id == workspace.id).first()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    for field, val in payload.model_dump(exclude_unset=True).items():
+        setattr(c, field, val)
+    db.commit()
+    db.refresh(c)
+    return c
+
+
+@app.delete("/api/contacts/{contact_id}")
+def delete_contact(
+    contact_id: int,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    c = db.query(Contact).filter(Contact.id == contact_id, Contact.workspace_id == workspace.id).first()
+    if not c:
+        raise HTTPException(404, "Contact not found")
+    db.delete(c)
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/contacts/import")
+def import_contacts(
+    payload: List[ContactCreate],
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    created = 0
+    for item in payload:
+        existing = db.query(Contact).filter(
+            Contact.workspace_id == workspace.id,
+            Contact.username == item.username,
+            Contact.platform == item.platform,
+        ).first()
+        if not existing:
+            db.add(Contact(
+                user_id=current_user.id,
+                workspace_id=workspace.id,
+                username=item.username,
+                platform=item.platform,
+                display_name=item.display_name,
+                tags=item.tags,
+                notes=item.notes,
+                status=item.status,
+            ))
+            created += 1
+    db.commit()
+    return {"imported": created, "skipped": len(payload) - created}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Admin: Audit Logs ────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/audit-logs", response_model=List[AuditLogResponse])
+def admin_audit_logs(
+    limit: int = 100,
+    action: Optional[str] = None,
+    user_id: Optional[int] = None,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    q = db.query(AuditLog)
+    if action:
+        q = q.filter(AuditLog.action.ilike(f"%{action}%"))
+    if user_id:
+        q = q.filter(AuditLog.user_id == user_id)
+    return q.order_by(AuditLog.created_at.desc()).limit(limit).all()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Admin: Feature Flags / Global Config ─────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/feature-flags", response_model=List[FeatureFlagResponse])
+def admin_list_feature_flags(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    return db.query(FeatureFlag).order_by(FeatureFlag.key).all()
+
+
+@app.post("/api/admin/feature-flags", response_model=FeatureFlagResponse)
+def admin_create_feature_flag(
+    payload: FeatureFlagCreate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    existing = db.query(FeatureFlag).filter(FeatureFlag.key == payload.key).first()
+    if existing:
+        raise HTTPException(400, f"Flag '{payload.key}' already exists")
+    flag = FeatureFlag(key=payload.key, value=payload.value, scope=payload.scope, scope_id=payload.scope_id)
+    db.add(flag)
+    db.commit()
+    db.refresh(flag)
+    return flag
+
+
+@app.patch("/api/admin/feature-flags/{flag_id}", response_model=FeatureFlagResponse)
+def admin_update_feature_flag(
+    flag_id: int,
+    payload: FeatureFlagUpdate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(404, "Flag not found")
+    for field, val in payload.model_dump(exclude_unset=True).items():
+        setattr(flag, field, val)
+    db.commit()
+    db.refresh(flag)
+    return flag
+
+
+@app.delete("/api/admin/feature-flags/{flag_id}")
+def admin_delete_feature_flag(
+    flag_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(404, "Flag not found")
+    db.delete(flag)
+    db.commit()
+    return {"ok": True}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Admin: System Health ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/health")
+def admin_system_health(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    import platform as plat
+    import psutil
+
+    disk = psutil.disk_usage("/") if hasattr(psutil, "disk_usage") else None
+    mem = psutil.virtual_memory() if hasattr(psutil, "virtual_memory") else None
+
+    db_size = None
+    db_path = os.path.join(os.path.dirname(__file__), "bot.db")
+    if os.path.exists(db_path):
+        db_size = os.path.getsize(db_path)
+
+    return {
+        "platform": plat.system(),
+        "python_version": plat.python_version(),
+        "cpu_percent": psutil.cpu_percent(interval=0.5) if hasattr(psutil, "cpu_percent") else None,
+        "memory": {"total": mem.total, "used": mem.used, "percent": mem.percent} if mem else None,
+        "disk": {"total": disk.total, "used": disk.used, "percent": disk.percent} if disk else None,
+        "db_size_bytes": db_size,
+        "ig_bot_running": getattr(bot_module, "bot_running", False),
+        "tg_service_running": telegram_service.is_running,
+        "uptime_seconds": int(time.time() - app.state.start_time) if hasattr(app.state, "start_time") else None,
+    }

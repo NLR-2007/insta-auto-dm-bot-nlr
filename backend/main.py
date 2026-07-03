@@ -1364,6 +1364,42 @@ async def tg_add_channel_manual(
     return {"id": ch.id, "chat_id": ch.chat_id, "title": ch.title, "chat_type": ch.chat_type, "member_count": ch.member_count}
 
 
+# ── Telegram File Upload ─────────────────────────────────────────────────────
+
+import uuid
+from fastapi.responses import FileResponse
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads", "tg")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@app.post("/api/tg/upload")
+async def tg_upload_media(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    allowed_ext = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".mp4", ".pdf", ".doc", ".docx", ".zip", ".txt", ".csv"}
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in allowed_ext:
+        raise HTTPException(400, f"File type {ext} not allowed")
+
+    if file.size and file.size > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 50MB)")
+
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    return {"filename": unique_name, "original_name": file.filename, "size": len(content)}
+
+@app.get("/api/tg/uploads/{filename}")
+async def tg_get_upload(filename: str):
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(404, "File not found")
+    return FileResponse(file_path)
+
 # ── Telegram Scheduled Posts ─────────────────────────────────────────────────
 
 @app.post("/api/tg/posts/schedule")
@@ -1376,12 +1412,19 @@ def tg_schedule_post(req: TgScheduledPostCreate, current_user: User = Depends(ge
     if bot.user_id != current_user.id or bot.workspace_id != workspace.id:
         raise HTTPException(403, "Not your channel")
 
+    batch_json = None
+    if req.batch_messages:
+        batch_json = json.dumps(req.batch_messages)
+
     post = TgScheduledPost(
         content=req.content,
+        message_type=req.message_type or "text",
         media_type=req.media_type,
+        media_path=req.media_path,
         scheduled_at=req.scheduled_at,
         is_recurring=req.is_recurring,
         recurrence_rule=req.recurrence_rule,
+        batch_messages=batch_json,
         channel_id=req.channel_id,
     )
     db.add(post)
@@ -1389,7 +1432,8 @@ def tg_schedule_post(req: TgScheduledPostCreate, current_user: User = Depends(ge
     db.refresh(post)
     from datetime import timedelta
     ist_time = req.scheduled_at + timedelta(hours=5, minutes=30)
-    log_to_db("INFO", f"[TG] Post scheduled for {channel.title} at {ist_time.strftime('%Y-%m-%d %H:%M:%S')} IST")
+    msg_label = "batch" if req.batch_messages else req.message_type or "text"
+    log_to_db("INFO", f"[TG] {msg_label} scheduled for {channel.title} at {ist_time.strftime('%Y-%m-%d %H:%M:%S')} IST")
     return {"id": post.id, "status": post.status, "scheduled_at": post.scheduled_at.isoformat()}
 
 
@@ -1410,10 +1454,13 @@ def tg_list_posts(current_user: User = Depends(get_current_user), workspace: Wor
 
     return [
         {
-            "id": p.id, "content": p.content, "media_type": p.media_type,
+            "id": p.id, "content": p.content,
+            "message_type": getattr(p, "message_type", "text") or "text",
+            "media_type": p.media_type,
             "scheduled_at": p.scheduled_at.isoformat(),
             "status": p.status, "is_recurring": p.is_recurring,
             "recurrence_rule": p.recurrence_rule,
+            "batch_messages": json.loads(p.batch_messages) if p.batch_messages else None,
             "error_message": p.error_message,
             "sent_at": p.sent_at.isoformat() if p.sent_at else None,
             "created_at": p.created_at.isoformat(),
@@ -1453,6 +1500,8 @@ async def tg_send_now(post_id: int, current_user: User = Depends(get_current_use
     try:
         if post.media_type == "photo" and post.media_path:
             await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
+        elif post.media_type == "document" and post.media_path:
+            await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
         else:
             await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
 

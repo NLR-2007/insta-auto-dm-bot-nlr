@@ -22,7 +22,7 @@ export default function TelegramPanel() {
 
   const tabs = [
     { id: "bots", label: "Bots & Channels", icon: Bot },
-    { id: "schedule", label: "Schedule Posts", icon: SendIcon },
+    { id: "schedule", label: "Schedule", icon: SendIcon },
     { id: "moderation", label: "Moderation", icon: Hash },
   ];
 

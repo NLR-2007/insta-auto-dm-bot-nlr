@@ -1,7 +1,7 @@
 import React from "react";
 import { ArrowLeft, Shield, Zap } from "lucide-react";
 
-export default function PrivacyPolicy({ onBack }) {
+export default function LegalPrivacy({ onBack }) {
   return (
     <div className="legal-page">
       <nav className="legal-nav">

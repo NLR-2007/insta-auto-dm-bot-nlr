@@ -9,7 +9,7 @@ import AdminPanel from "./components/AdminPanel";
 import AuthPage from "./components/AuthPage";
 import TelegramPanel from "./components/TelegramPanel";
 import LandingPage from "./components/LandingPage";
-import PrivacyPolicy from "./components/PrivacyPolicy";
+import LegalPrivacy from "./components/LegalPrivacy";
 import TermsConditions from "./components/TermsConditions";
 import LegalDisclaimer from "./components/LegalDisclaimer";
 import {
@@ -70,7 +70,7 @@ export default function App() {
 
   // ── Auth gate ────────────────────────────────────────────────────────────────
   if (!isAuthenticated) {
-    if (legalPage === "privacy") return <PrivacyPolicy onBack={() => setLegalPage(null)} />;
+    if (legalPage === "privacy") return <LegalPrivacy onBack={() => setLegalPage(null)} />;
     if (legalPage === "terms") return <TermsConditions onBack={() => setLegalPage(null)} />;
     if (legalPage === "disclaimer") return <LegalDisclaimer onBack={() => setLegalPage(null)} />;
     if (showAuth) {

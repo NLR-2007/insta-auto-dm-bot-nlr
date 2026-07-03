@@ -78,3 +78,33 @@ export const apiRegister = async (username, email, password) => {
     body: JSON.stringify({ username, email, password }),
   });
 };
+
+export const apiUpload = async (endpoint, file) => {
+  const url = `${BASE_URL}${endpoint}`;
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "ngrok-skip-browser-warning": "69420",
+    },
+    body: formData,
+  });
+
+  if (response.status === 401) {
+    logout();
+    throw new Error("Session expired. Please log in again.");
+  }
+  if (!response.ok) {
+    let errMsg = `Upload failed: ${response.status}`;
+    try {
+      const data = await response.json();
+      if (data?.detail) errMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+    } catch {}
+    throw new Error(errMsg);
+  }
+  return response.json();
+};

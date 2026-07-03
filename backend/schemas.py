@@ -146,9 +146,12 @@ class TgScheduledPostCreate(BaseModel):
     channel_id: int
     content: str = Field(..., min_length=1)
     scheduled_at: datetime
+    message_type: str = "text"
     media_type: Optional[str] = None
+    media_path: Optional[str] = None
     is_recurring: bool = False
     recurrence_rule: Optional[str] = None
+    batch_messages: Optional[list] = None
 
 class TgModerationRuleCreate(BaseModel):
     channel_id: int

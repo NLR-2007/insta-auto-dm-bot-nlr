@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional
 import httpx
@@ -11,6 +13,7 @@ from backend.database import (
 from backend.security import decrypt_secret
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads", "tg")
 
 
 class TelegramBotService:
@@ -102,17 +105,47 @@ class TelegramBotService:
             chat_id=int(chat_id), text=text, parse_mode=parse_mode,
         )
 
-    async def send_photo(self, token: str, chat_id: str, photo_url: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
-        params = {"chat_id": int(chat_id), "photo": photo_url, "caption": caption}
+    async def send_photo(self, token: str, chat_id: str, photo_source: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
+        local_path = self._resolve_local_file(photo_source)
+        if local_path:
+            return await self._upload_file(token, "sendPhoto", "photo", local_path, int(chat_id), caption, parse_mode)
+        params = {"chat_id": int(chat_id), "photo": photo_source, "caption": caption}
         if parse_mode:
             params["parse_mode"] = parse_mode
         return await self.api_call(token, "sendPhoto", **params)
 
-    async def send_document(self, token: str, chat_id: str, document_url: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
-        params = {"chat_id": int(chat_id), "document": document_url, "caption": caption}
+    async def send_document(self, token: str, chat_id: str, doc_source: str, caption: str = "", parse_mode: Optional[str] = "HTML"):
+        local_path = self._resolve_local_file(doc_source)
+        if local_path:
+            return await self._upload_file(token, "sendDocument", "document", local_path, int(chat_id), caption, parse_mode)
+        params = {"chat_id": int(chat_id), "document": doc_source, "caption": caption}
         if parse_mode:
             params["parse_mode"] = parse_mode
         return await self.api_call(token, "sendDocument", **params)
+
+    def _resolve_local_file(self, path: str) -> Optional[str]:
+        if not path or path.startswith("http://") or path.startswith("https://"):
+            return None
+        full_path = os.path.join(UPLOAD_DIR, path) if not os.path.isabs(path) else path
+        return full_path if os.path.exists(full_path) else None
+
+    async def _upload_file(self, token: str, method: str, field: str, file_path: str, chat_id: int, caption: str, parse_mode: Optional[str]):
+        token = decrypt_secret(token) or token
+        url = TELEGRAM_API.format(token=token, method=method)
+        data = {"chat_id": str(chat_id)}
+        if caption:
+            data["caption"] = caption
+        if parse_mode:
+            data["parse_mode"] = parse_mode
+        filename = os.path.basename(file_path)
+        async with httpx.AsyncClient(timeout=60) as client:
+            with open(file_path, "rb") as f:
+                files = {field: (filename, f)}
+                resp = await client.post(url, data=data, files=files)
+                result = resp.json()
+                if not result.get("ok"):
+                    raise Exception(result.get("description", "Telegram API error"))
+                return result.get("result")
 
     async def delete_message(self, token: str, chat_id: str, message_id: int):
         return await self.api_call(
@@ -145,30 +178,25 @@ class TelegramBotService:
                     continue
 
                 try:
-                    if post.media_type == "photo" and post.media_path:
+                    batch = None
+                    if post.batch_messages:
                         try:
-                            result = await self.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode="HTML")
-                        except Exception as html_err:
-                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
-                                result = await self.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode=None)
-                            else:
-                                raise html_err
-                    elif post.media_type == "document" and post.media_path:
-                        try:
-                            result = await self.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode="HTML")
-                        except Exception as html_err:
-                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
-                                result = await self.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content, parse_mode=None)
-                            else:
-                                raise html_err
+                            batch = json.loads(post.batch_messages)
+                        except Exception:
+                            batch = None
+
+                    if batch and isinstance(batch, list):
+                        result = await self._send_single(bot.bot_token, channel.chat_id, post.content, post.media_type, post.media_path)
+                        for msg in batch:
+                            await asyncio.sleep(1)
+                            await self._send_single(
+                                bot.bot_token, channel.chat_id,
+                                msg.get("content", ""),
+                                msg.get("media_type"),
+                                msg.get("media_path"),
+                            )
                     else:
-                        try:
-                            result = await self.send_message(bot.bot_token, channel.chat_id, post.content, parse_mode="HTML")
-                        except Exception as html_err:
-                            if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
-                                result = await self.send_message(bot.bot_token, channel.chat_id, post.content, parse_mode=None)
-                            else:
-                                raise html_err
+                        result = await self._send_single(bot.bot_token, channel.chat_id, post.content, post.media_type, post.media_path)
 
                     post.status = "sent"
                     post.sent_at = datetime.utcnow()
@@ -185,11 +213,13 @@ class TelegramBotService:
                         next_time = self._calc_next_recurrence(post.scheduled_at, post.recurrence_rule)
                         new_post = TgScheduledPost(
                             content=post.content,
+                            message_type=getattr(post, "message_type", "text"),
                             media_type=post.media_type,
                             media_path=post.media_path,
                             scheduled_at=next_time,
                             is_recurring=True,
                             recurrence_rule=post.recurrence_rule,
+                            batch_messages=post.batch_messages,
                             channel_id=post.channel_id,
                         )
                         db.add(new_post)
@@ -204,6 +234,29 @@ class TelegramBotService:
             log_to_db("ERROR", f"[TG] Scheduler error: {e}")
         finally:
             db.close()
+
+    async def _send_single(self, token: str, chat_id: str, text: str, media_type: Optional[str] = None, media_path: Optional[str] = None):
+        if media_type == "photo" and media_path:
+            try:
+                return await self.send_photo(token, chat_id, media_path, text, parse_mode="HTML")
+            except Exception as e:
+                if "parse" in str(e).lower() or "entities" in str(e).lower():
+                    return await self.send_photo(token, chat_id, media_path, text, parse_mode=None)
+                raise
+        elif media_type == "document" and media_path:
+            try:
+                return await self.send_document(token, chat_id, media_path, text, parse_mode="HTML")
+            except Exception as e:
+                if "parse" in str(e).lower() or "entities" in str(e).lower():
+                    return await self.send_document(token, chat_id, media_path, text, parse_mode=None)
+                raise
+        else:
+            try:
+                return await self.send_message(token, chat_id, text, parse_mode="HTML")
+            except Exception as e:
+                if "parse" in str(e).lower() or "entities" in str(e).lower():
+                    return await self.send_message(token, chat_id, text, parse_mode=None)
+                raise
 
     def _calc_next_recurrence(self, current: datetime, rule: str) -> datetime:
         if rule == "hourly":
@@ -287,6 +340,34 @@ class TelegramBotService:
                                         else:
                                             pass
 
+                        elif rule.rule_type == "custom":
+                            pattern = config.get("pattern", "")
+                            action = config.get("action", "delete")
+                            match_mode = config.get("match_mode", "contains")
+                            reply_text = config.get("reply_text", "")
+                            matched = False
+                            if match_mode == "regex":
+                                try:
+                                    matched = bool(re.search(pattern, text, re.IGNORECASE))
+                                except re.error:
+                                    matched = False
+                            elif match_mode == "exact":
+                                matched = text.strip().lower() == pattern.strip().lower()
+                            else:
+                                matched = pattern.lower() in text.lower()
+
+                            if matched and text:
+                                try:
+                                    if action in ("delete", "delete_and_warn"):
+                                        await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
+                                        log_to_db("INFO", f"[TG] Custom rule deleted message in {chat_id}")
+                                    if action in ("warn", "delete_and_warn") and reply_text:
+                                        user_name = msg.get("from", {}).get("first_name", "User")
+                                        warn_text = reply_text.replace("{name}", user_name)
+                                        await self._send_single(bot.bot_token, chat_id, warn_text)
+                                except Exception:
+                                    pass
+
         except Exception as e:
             log_to_db("ERROR", f"[TG] Moderation error: {e}")
         finally:
@@ -316,7 +397,7 @@ class TelegramBotService:
                 await self._process_moderation()
             except Exception as e:
                 log_to_db("ERROR", f"[TG] Service loop error: {e}")
-            await asyncio.sleep(15)
+            await asyncio.sleep(5)
 
 
 telegram_service = TelegramBotService()

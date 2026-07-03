@@ -1,4 +1,5 @@
 import os
+import bcrypt
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey, event, text
 from sqlalchemy.engine import Engine
@@ -265,12 +266,14 @@ class TgScheduledPost(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     content = Column(Text, nullable=False)
+    message_type = Column(String(20), default="text")
     media_type = Column(String(20), nullable=True)
     media_path = Column(String(500), nullable=True)
     scheduled_at = Column(DateTime, nullable=False)
     status = Column(String(20), default="pending")
     is_recurring = Column(Boolean, default=False)
     recurrence_rule = Column(String(50), nullable=True)
+    batch_messages = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     sent_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -369,6 +372,8 @@ def ensure_saas_columns():
         ("opt_outs", "workspace_id"),
         ("tg_bot_configs", "workspace_id"),
         ("tg_bot_configs", "bot_token_hash"),
+        ("tg_scheduled_posts", "message_type"),
+        ("tg_scheduled_posts", "batch_messages"),
     ]
     with engine.begin() as conn:
         for table_name, column_name in targets:
@@ -385,6 +390,14 @@ def ensure_saas_columns():
                     columns = _table_columns(conn, table_name)
                     if column_name not in columns:
                         conn.execute(text("ALTER TABLE tg_bot_configs ADD COLUMN bot_token_hash VARCHAR(128)"))
+                elif table_name == "tg_scheduled_posts" and column_name == "message_type":
+                    columns = _table_columns(conn, table_name)
+                    if column_name not in columns:
+                        conn.execute(text("ALTER TABLE tg_scheduled_posts ADD COLUMN message_type VARCHAR(20) DEFAULT 'text'"))
+                elif table_name == "tg_scheduled_posts" and column_name == "batch_messages":
+                    columns = _table_columns(conn, table_name)
+                    if column_name not in columns:
+                        conn.execute(text("ALTER TABLE tg_scheduled_posts ADD COLUMN batch_messages TEXT"))
                 else:
                     _add_nullable_int_column(conn, table_name, column_name)
             except Exception as e:
@@ -464,6 +477,32 @@ def init_db():
             if not exists:
                 db.add(Setting(key=s["key"], value=s["value"]))
         db.commit()
+
+        # Seed default admin user
+        admin_exists = db.query(User).filter(User.username == "admin").first()
+        if not admin_exists:
+            hashed = bcrypt.hashpw("aadhayareddy".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+            admin_user = User(
+                username="admin",
+                email="admin@lyvora.com",
+                password_hash=hashed,
+                is_admin=True,
+                is_enabled=True,
+            )
+            db.add(admin_user)
+            db.flush()
+            ws = Workspace(
+                name="Admin Workspace",
+                slug=f"admin-{admin_user.id}",
+                owner_user_id=admin_user.id,
+            )
+            db.add(ws)
+            db.flush()
+            db.add(WorkspaceMember(workspace_id=ws.id, user_id=admin_user.id, role="owner"))
+            db.add(Subscription(workspace_id=ws.id, plan_slug=ws.plan_slug, status="trialing"))
+            db.commit()
+            print("[INFO] Default admin user created (admin / admin@lyvora.com)")
+
     except Exception as e:
         print(f"Failed to seed default settings: {e}")
     finally:

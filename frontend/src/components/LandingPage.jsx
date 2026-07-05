@@ -27,21 +27,7 @@ export default function LandingPage({ onGetStarted, onNavigateLegal }) {
           </span>
         </div>
 
-        {/* Right Nav Links (hidden on mobile) */}
-        <nav className="hidden md:flex items-center gap-8">
-          <a href="#home" className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium">
-            Home
-          </a>
-          <a href="#pricing" className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium">
-            Pricing
-          </a>
-          <a href="#about" className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium">
-            About
-          </a>
-          <a href="#contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors font-medium">
-            Contact
-          </a>
-        </nav>
+
 
         {/* CTA Button */}
         <Button 

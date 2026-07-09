@@ -971,7 +971,7 @@ No official Dockerfile is provided yet. A typical setup would be:
 Lyvora is developed and maintained by **NLR Group of Companies**.
 
 - Website: [nlrgroupofcompany.in](https://nlrgroupofcompany.in)
-- Live Dashboard: [insta-auto-dm-bot-nlr.vercel.app](https://insta-auto-dm-bot-nlr.vercel.app)
+- Live Dashboard: [insta-auto-dm-bot-nlr.vercel.app](https://lyvoranlr.vercel.app/)
 - Repository: [github.com/NLR-2007/insta-auto-dm-bot-nlr](https://github.com/NLR-2007/insta-auto-dm-bot-nlr)
 
 ---

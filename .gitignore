@@ -32,3 +32,6 @@ backend/*.log
 # User uploads and temporary files
 backend/uploads/
 text.txt
+*.mp4
+*.webm
+

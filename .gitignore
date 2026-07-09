@@ -28,3 +28,7 @@ backend/.env
 # Log files
 *.log
 backend/*.log
+
+# User uploads and temporary files
+backend/uploads/
+text.txt

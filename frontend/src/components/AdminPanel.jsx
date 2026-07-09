@@ -4,7 +4,7 @@ import {
   CheckCircle, XCircle, Clock, TrendingUp, Shield,
   UserCheck, Server, Eye, Trash2, ChevronDown, ChevronUp,
   Send, Bot, Hash, Play, Pause, ToggleLeft, ToggleRight,
-  FileText, Cpu, HardDrive, Database, Flag, Plus, Save, X
+  FileText, Cpu, HardDrive, Database, Flag, Plus, Save, X, Coins
 } from "lucide-react";
 import { apiFetch } from "../api";
 
@@ -68,8 +68,16 @@ function UserRow({ user, onToggleAdmin, onToggleEnabled, onDelete }) {
         </td>
         <td>
           <div style={{ fontSize: "12px", lineHeight: "1.8" }}>
-            <div><strong>{user.tg_bots}</strong> bot(s)</div>
+            <strong>{user.tg_bots}</strong> bot(s)
             <div>{user.tg_channels} channel(s)</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "11px" }}>{user.tg_posts_sent} sent</div>
+          </div>
+        </td>
+        <td>
+          <div style={{ fontSize: "12px", lineHeight: "1.8" }}>
+            <div style={{ fontWeight: 700, color: "var(--text-primary)" }}>₹{(user.total_cost ?? 0).toFixed(2)}</div>
+            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>IG: ₹{(user.ig_cost ?? 0).toFixed(2)}</div>
+            <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>TG: ₹{(user.tg_cost ?? 0).toFixed(2)}</div>
           </div>
         </td>
         <td>
@@ -99,7 +107,7 @@ function UserRow({ user, onToggleAdmin, onToggleEnabled, onDelete }) {
       </tr>
       {expanded && user.accounts?.map(acct => (
         <tr key={acct.id} style={{ background: "var(--bg-secondary)" }}>
-          <td colSpan={6} style={{ paddingLeft: "56px", fontSize: "12px" }}>
+          <td colSpan={7} style={{ paddingLeft: "56px", fontSize: "12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "14px", padding: "2px 0" }}>
               <UserCheck size={12} style={{ color: "var(--text-muted)" }} />
               <span style={{ fontWeight: 600 }}>@{acct.username}</span>
@@ -358,6 +366,13 @@ export default function AdminPanel() {
                       {stats?.tg_service_running ? "Running" : "Stopped"}
                     </span>
                   </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--border-color)", fontSize: "12px", background: "rgba(22, 163, 74, 0.05)" }}>
+                    <Coins size={14} style={{ color: "var(--success)" }} />
+                    <span style={{ fontWeight: 600 }}>Total System Cost:</span>
+                    <span style={{ color: "var(--success)", fontWeight: 700 }}>
+                      ₹{(stats?.total_system_cost ?? 0).toFixed(2)}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div style={{ display: "flex", gap: "8px" }}>
@@ -396,6 +411,7 @@ export default function AdminPanel() {
                     ? `${Math.round((stats.total_dms_sent / (stats.total_dms_sent + stats.total_dms_failed)) * 100)}%`
                     : "—"
                 } color="#16A34A" />
+              <StatCard icon={Coins} label="IG Cost" value={stats?.total_ig_cost != null ? `₹${stats.total_ig_cost.toFixed(2)}` : "—"} color="#10B981" />
             </div>
           </div>
 
@@ -408,6 +424,7 @@ export default function AdminPanel() {
               <StatCard icon={Hash} label="TG Channels" value={stats?.total_tg_channels ?? "—"} color="#0EA5E9" />
               <StatCard icon={Send} label="Posts Sent" value={stats?.total_tg_posts_sent ?? "—"} color="#16A34A" />
               <StatCard icon={Clock} label="Posts Pending" value={stats?.total_tg_posts_pending ?? "—"} color="#F59E0B" />
+              <StatCard icon={Coins} label="TG Cost" value={stats?.total_tg_cost != null ? `₹${stats.total_tg_cost.toFixed(2)}` : "—"} color="#10B981" />
             </div>
           </div>
         </div>
@@ -434,6 +451,7 @@ export default function AdminPanel() {
                   <th>Status</th>
                   <th>Instagram</th>
                   <th>Telegram</th>
+                  <th>Usage Cost</th>
                   <th>Actions</th>
                 </tr>
               </thead>

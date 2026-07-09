@@ -196,6 +196,9 @@ export default function TgModeration() {
                 <label style={labelStyle}>Welcome Message (use {"{name}"} for member name)</label>
                 <textarea value={form.welcome_message} onChange={(e) => setForm({ ...form, welcome_message: e.target.value })}
                   rows={3} placeholder={"Welcome {name}! Please read the rules."} required />
+                <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "6px", display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span>ℹ️ Triggers automatically when a member joins the chat directly or is manually added by an admin.</span>
+                </p>
               </div>
             )}
 

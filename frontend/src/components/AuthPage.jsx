@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Lock, User, AtSign, ArrowRight, Loader, Eye, EyeOff, Zap, Send, BarChart3, Shield, MessageSquare } from "lucide-react";
-import { apiLogin, apiRegister } from "../api";
+import { apiLogin, apiRegister, getApiUrl, setApiUrl } from "../api";
 
 export default function AuthPage({ onAuthSuccess, onBackToHome }) {
   const [mode, setMode] = useState("login");
@@ -248,6 +248,24 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
               {mode === "login" ? "Register here" : "Sign in"}
             </button>
           </p>
+
+          <div style={{ textAlign: "center", marginTop: "16px", marginBottom: "16px" }}>
+            <button
+              type="button"
+              className="auth-link-btn"
+              style={{ fontSize: "11px", color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+              onClick={() => {
+                const currentUrl = getApiUrl();
+                const newUrl = prompt("Configure Backend API Server URL (e.g. ngrok URL or localhost):", currentUrl);
+                if (newUrl !== null) {
+                  setApiUrl(newUrl.trim());
+                  window.location.reload();
+                }
+              }}
+            >
+              Configure API Server
+            </button>
+          </div>
 
           {/* Mobile-only developer credit */}
           <p className="auth-mobile-credit">

@@ -14,8 +14,7 @@ const STATUS_COLORS = {
 
 const MSG_TYPES = [
   { value: "text", label: "Text", icon: MessageSquare },
-  { value: "photo", label: "Photo", icon: Image },
-  { value: "document", label: "Document", icon: FileText },
+  { value: "media", label: "Media / File", icon: FileUp },
   { value: "multi", label: "Multi", icon: Layers },
 ];
 
@@ -138,11 +137,42 @@ export default function TgSchedule() {
   });
   const [mediaFile, setMediaFile] = useState(null);
   const [mediaPreview, setMediaPreview] = useState(null);
+  const [existingFileName, setExistingFileName] = useState(null);
+  const [mediaFiles, setMediaFiles] = useState([]);
   const [batchMessages, setBatchMessages] = useState([{ content: "", media_type: "text", file: null, filePreview: null }]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
   const contentRef = useRef(null);
+
+  const toggleSelect = (id) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter(x => x !== id));
+    } else {
+      setSelectedIds([...selectedIds, id]);
+    }
+  };
+
+  const selectAll = () => {
+    if (selectedIds.length === posts.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(posts.map(p => p.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Delete ${selectedIds.length} scheduled item(s)?`)) return;
+    try {
+      await Promise.all(selectedIds.map(id => apiFetch(`/api/tg/posts/${id}`, { method: "DELETE" })));
+      setSelectedIds([]);
+      fetchData();
+    } catch (e) {
+      alert(e.message || "Failed to delete selected items.");
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -158,21 +188,33 @@ export default function TgSchedule() {
     setForm({ channel_id: "", content: "", scheduled_at: "", message_type: "text", is_recurring: false, recurrence_rule: "" });
     setMediaFile(null);
     setMediaPreview(null);
+    setExistingFileName(null);
+    setMediaFiles([]);
     setBatchMessages([{ content: "", media_type: "text", file: null, filePreview: null }]);
     setError("");
     setShowPreview(false);
     setEditingId(null);
+    setSelectedIds([]);
   };
 
   const handleFileSelect = (file) => {
-    setMediaFile(file);
-    if (file && file.type.startsWith("image/")) {
+    if (!file) return;
+    const newId = Date.now() + Math.random();
+    const newAttachment = {
+      id: newId,
+      file: file,
+      name: file.name,
+      preview: null,
+      media_type: file.type.startsWith("image/") ? "photo" : "document",
+    };
+    if (file.type.startsWith("image/")) {
       const reader = new FileReader();
-      reader.onload = (e) => setMediaPreview(e.target.result);
+      reader.onload = (e) => {
+        setMediaFiles(prev => prev.map(item => item.id === newId ? { ...item, preview: e.target.result } : item));
+      };
       reader.readAsDataURL(file);
-    } else {
-      setMediaPreview(null);
     }
+    setMediaFiles(prev => [...prev, newAttachment]);
   };
 
   const uploadFile = async (file) => {
@@ -189,7 +231,7 @@ export default function TgSchedule() {
       channel_id: String(post.channel_id),
       content: post.content,
       scheduled_at: localStr,
-      message_type: post.message_type || "text",
+      message_type: (post.message_type === "photo" || post.message_type === "document") ? "media" : (post.message_type || "text"),
       is_recurring: post.is_recurring,
       recurrence_rule: post.recurrence_rule || "",
     });
@@ -197,6 +239,51 @@ export default function TgSchedule() {
     setShowForm(true);
     setMediaFile(null);
     setMediaPreview(null);
+    setExistingFileName(null);
+
+    const loadedFiles = [];
+    if (post.media_path) {
+      loadedFiles.push({
+        id: "main",
+        name: post.media_path.split("/").pop(),
+        preview: post.media_type === "photo" ? `${getApiUrl()}/api/tg/uploads/${post.media_path}` : null,
+        media_path: post.media_path,
+        media_type: post.media_type,
+      });
+    }
+    // If it's a media post (i.e. message_type is photo or document), all batch messages with content === "" or content is empty are just additional files!
+    const isMediaPost = post.message_type === "photo" || post.message_type === "document";
+    const otherBatchMsgs = [];
+
+    if (post.batch_messages) {
+      post.batch_messages.forEach((bm, idx) => {
+        if (isMediaPost && !bm.content && bm.media_path) {
+          loadedFiles.push({
+            id: `batch-media-${idx}`,
+            name: bm.media_path.split("/").pop(),
+            preview: bm.media_type === "photo" ? `${getApiUrl()}/api/tg/uploads/${bm.media_path}` : null,
+            media_path: bm.media_path,
+            media_type: bm.media_type,
+          });
+        } else {
+          otherBatchMsgs.push(bm);
+        }
+      });
+    }
+    setMediaFiles(loadedFiles);
+
+    if (post.batch_messages && post.batch_messages.length > 0 && !isMediaPost) {
+      setBatchMessages(post.batch_messages.map(bm => ({
+        content: bm.content || "",
+        media_type: (bm.media_type === "photo" || bm.media_type === "document") ? "media" : (bm.media_type || "text"),
+        file: null,
+        filePreview: (bm.media_path && bm.media_type === "photo") ? `${getApiUrl()}/api/tg/uploads/${bm.media_path}` : null,
+        media_path: bm.media_path || null,
+        actual_media_type: bm.media_type || null,
+      })));
+    } else {
+      setBatchMessages([{ content: "", media_type: "text", file: null, filePreview: null }]);
+    }
   };
 
   const handleCreate = async (e) => {
@@ -208,37 +295,74 @@ export default function TgSchedule() {
       const utcScheduledAt = localDate.toISOString();
       const processedContent = plainTextToHtml(form.content);
 
-      let uploadedMediaPath = null;
-      if (mediaFile && (form.message_type === "photo" || form.message_type === "document")) {
-        uploadedMediaPath = await uploadFile(mediaFile);
-      }
-
       const payload = {
         channel_id: parseInt(form.channel_id),
         content: processedContent,
         scheduled_at: utcScheduledAt,
-        message_type: form.message_type,
-        media_type: (form.message_type === "photo" || form.message_type === "document") ? form.message_type : null,
-        media_path: uploadedMediaPath,
         is_recurring: form.is_recurring,
         recurrence_rule: form.is_recurring ? form.recurrence_rule : null,
       };
 
-      if (form.message_type === "multi") {
+      if (form.message_type === "media") {
+        if (mediaFiles.length === 0) {
+          payload.message_type = "text";
+          payload.media_type = null;
+          payload.media_path = null;
+        } else {
+          const uploadedPaths = [];
+          for (const item of mediaFiles) {
+            if (item.file) {
+              const path = await uploadFile(item.file);
+              uploadedPaths.push({ path, media_type: item.media_type });
+            } else {
+              uploadedPaths.push({ path: item.media_path, media_type: item.media_type });
+            }
+          }
+
+          // Main post media:
+          payload.message_type = uploadedPaths[0].media_type;
+          payload.media_type = uploadedPaths[0].media_type;
+          payload.media_path = uploadedPaths[0].path;
+
+          // Subsequent media files:
+          if (uploadedPaths.length > 1) {
+            payload.batch_messages = uploadedPaths.slice(1).map(item => ({
+              content: "",
+              media_type: item.media_type,
+              media_path: item.path,
+            }));
+          }
+        }
+      } else if (form.message_type === "multi") {
+        payload.message_type = "multi";
         const processedBatch = [];
         for (const msg of batchMessages) {
           if (!msg.content.trim()) continue;
-          let batchMediaPath = null;
-          if (msg.file && msg.media_type !== "text") {
-            batchMediaPath = await uploadFile(msg.file);
+          let batchMediaPath = msg.media_path || null;
+          let actualMediaType = null;
+          if (msg.media_type === "media") {
+            if (msg.file) {
+              batchMediaPath = await uploadFile(msg.file);
+              actualMediaType = msg.file.type.startsWith("image/") ? "photo" : "document";
+            } else if (msg.media_path) {
+              if (msg.filePreview) {
+                actualMediaType = "photo";
+              } else {
+                actualMediaType = msg.actual_media_type || "document";
+              }
+            }
           }
           processedBatch.push({
             content: plainTextToHtml(msg.content),
-            media_type: msg.media_type !== "text" ? msg.media_type : null,
+            media_type: actualMediaType,
             media_path: batchMediaPath,
           });
         }
         payload.batch_messages = processedBatch;
+      } else {
+        payload.message_type = "text";
+        payload.media_type = null;
+        payload.media_path = null;
       }
 
       if (editingId) {
@@ -274,15 +398,20 @@ export default function TgSchedule() {
   };
   const setBatchFile = (i, file) => {
     const copy = [...batchMessages];
-    if (file && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        copy[i] = { ...copy[i], file, filePreview: e.target.result };
-        setBatchMessages([...copy]);
-      };
-      reader.readAsDataURL(file);
+    if (file) {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          copy[i] = { ...copy[i], file, filePreview: e.target.result };
+          setBatchMessages([...copy]);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        copy[i] = { ...copy[i], file, filePreview: null };
+        setBatchMessages(copy);
+      }
     } else {
-      copy[i] = { ...copy[i], file, filePreview: null };
+      copy[i] = { ...copy[i], file: null, filePreview: null, media_path: null, actual_media_type: null };
       setBatchMessages(copy);
     }
   };
@@ -315,7 +444,7 @@ export default function TgSchedule() {
                   const Icon = t.icon;
                   const active = form.message_type === t.value;
                   return (
-                    <button key={t.value} type="button" onClick={() => { setForm({ ...form, message_type: t.value }); setMediaFile(null); setMediaPreview(null); }}
+                    <button key={t.value} type="button" onClick={() => { setForm({ ...form, message_type: t.value }); setMediaFile(null); setMediaPreview(null); setExistingFileName(null); }}
                       style={{
                         padding: "6px 12px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
                         border: "none",
@@ -395,20 +524,48 @@ export default function TgSchedule() {
               )}
             </div>
 
-            {/* ── File upload for photo/document ── */}
-            {(form.message_type === "photo" || form.message_type === "document") && (
+            {/* ── File upload for unified media/file ── */}
+            {form.message_type === "media" && (
               <div style={{ marginBottom: "16px" }}>
-                <label style={labelStyle}>
-                  {form.message_type === "photo" ? "Attach Photo" : "Attach File"}
-                </label>
+                <label style={labelStyle}>Attach Photos / Documents</label>
                 <FileUploadArea
-                  accept={form.message_type === "photo" ? "image/*" : "*"}
-                  label={form.message_type === "photo" ? "Select a photo to send" : "Select a file to send"}
-                  file={mediaFile}
-                  preview={mediaPreview}
+                  accept="*"
+                  label="Select photo or document to add"
+                  file={null}
+                  preview={null}
                   onFileSelect={handleFileSelect}
-                  onClear={() => { setMediaFile(null); setMediaPreview(null); }}
+                  onClear={() => {}}
                 />
+                {mediaFiles.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
+                    {mediaFiles.map((item, idx) => (
+                      <div key={item.id} className="file-upload-row" style={{
+                        display: "flex", alignItems: "center", gap: "12px", padding: "10px 14px",
+                        border: "1px solid var(--border-color)", borderRadius: "8px", background: "var(--bg-secondary)"
+                      }}>
+                        {item.preview ? (
+                          <img src={item.preview} alt="" style={{ width: "36px", height: "36px", borderRadius: "6px", objectFit: "cover" }} />
+                        ) : (
+                          <div style={{ width: "36px", height: "36px", borderRadius: "6px", background: "rgba(14,165,233,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "#0EA5E9" }}>
+                            <FileText size={18} />
+                          </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontWeight: 600, fontSize: "12px", marginBottom: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {item.name}
+                          </p>
+                          <p style={{ fontSize: "10px", color: "var(--text-muted)" }}>
+                            {item.media_type === "photo" ? "Photo" : "Document"} {idx === 0 && <span style={{ color: "#2563EB", fontWeight: 700, marginLeft: "4px" }}>(Main Post File)</span>}
+                          </p>
+                        </div>
+                        <button type="button" onClick={() => setMediaFiles(prev => prev.filter(f => f.id !== item.id))}
+                          style={{ background: "rgba(239,68,68,0.08)", border: "none", borderRadius: "4px", padding: "4px", cursor: "pointer", color: "var(--danger)", display: "flex", alignItems: "center" }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -429,8 +586,7 @@ export default function TgSchedule() {
                         <select value={msg.media_type} onChange={(e) => updateBatchMsg(i, "media_type", e.target.value)}
                           style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "6px", border: "1px solid var(--border-color)", background: "var(--bg-tertiary)" }}>
                           <option value="text">Text</option>
-                          <option value="photo">Photo</option>
-                          <option value="document">File</option>
+                          <option value="media">Media / File</option>
                         </select>
                         {batchMessages.length > 1 && (
                           <button type="button" onClick={() => removeBatchMsg(i)} style={{
@@ -446,12 +602,17 @@ export default function TgSchedule() {
                     {msg.media_type !== "text" && (
                       <div style={{ marginTop: "8px" }}>
                         <FileUploadArea
-                          accept={msg.media_type === "photo" ? "image/*" : "*"}
-                          label={msg.media_type === "photo" ? "Attach photo" : "Attach file"}
-                          file={msg.file}
+                          accept="*"
+                          label="Select a photo or document to send"
+                          file={msg.file || (msg.media_path ? { name: msg.media_path.split("/").pop() } : null)}
                           preview={msg.filePreview}
                           onFileSelect={(f) => setBatchFile(i, f)}
-                          onClear={() => { updateBatchMsg(i, "file", null); updateBatchMsg(i, "filePreview", null); }}
+                          onClear={() => { 
+                            updateBatchMsg(i, "file", null); 
+                            updateBatchMsg(i, "filePreview", null); 
+                            updateBatchMsg(i, "media_path", null);
+                            updateBatchMsg(i, "actual_media_type", null);
+                          }}
                         />
                       </div>
                     )}
@@ -486,6 +647,33 @@ export default function TgSchedule() {
         </div>
       )}
 
+      {posts.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", padding: "10px 16px", borderRadius: "10px", marginBottom: "16px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", fontWeight: "600", cursor: "pointer", color: "var(--text-secondary)" }}>
+            <input 
+              type="checkbox" 
+              checked={selectedIds.length === posts.length && posts.length > 0} 
+              onChange={selectAll}
+              style={{ width: "16px", height: "16px", accentColor: "#2563EB", cursor: "pointer" }}
+            />
+            Select All
+          </label>
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            ({selectedIds.length} selected)
+          </span>
+          {selectedIds.length > 0 && (
+            <button 
+              type="button" 
+              className="btn btn-danger" 
+              style={{ padding: "6px 14px", fontSize: "12px", marginLeft: "auto", display: "flex", gap: "6px", alignItems: "center" }}
+              onClick={handleBulkDelete}
+            >
+              <Trash2 size={13} /> Delete Selected
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Post list ── */}
       {posts.length === 0 ? (
         <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "24px", fontSize: "14px" }}>
@@ -494,64 +682,83 @@ export default function TgSchedule() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {posts.map((post) => {
-            const typeInfo = MSG_TYPES.find(t => t.value === (post.message_type || "text")) || MSG_TYPES[0];
+            let typeInfo = MSG_TYPES.find(t => t.value === (post.message_type || "text"));
+            if (!typeInfo) {
+              if (post.message_type === "photo" || post.message_type === "document") {
+                typeInfo = { 
+                  value: "media", 
+                  label: post.message_type === "photo" ? "Photo" : "Document", 
+                  icon: post.message_type === "photo" ? Image : FileText 
+                };
+              } else {
+                typeInfo = MSG_TYPES[0];
+              }
+            }
             const TypeIcon = typeInfo.icon;
             return (
-              <div key={post.id} className="glass-card" style={{ padding: "14px 18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#0EA5E9", background: "rgba(14, 165, 233, 0.08)", padding: "2px 10px", borderRadius: "12px" }}>
-                      {post.channel_title}
+              <div key={post.id} className="glass-card" style={{ padding: "14px 18px", display: "flex", gap: "14px", alignItems: "flex-start" }}>
+                <input 
+                  type="checkbox" 
+                  checked={selectedIds.includes(post.id)}
+                  onChange={() => toggleSelect(post.id)}
+                  style={{ width: "16px", height: "16px", marginTop: "12px", cursor: "pointer", accentColor: "#2563EB" }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: "#0EA5E9", background: "rgba(14, 165, 233, 0.08)", padding: "2px 10px", borderRadius: "12px" }}>
+                        {post.channel_title}
+                      </span>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "2px 8px", borderRadius: "10px", display: "flex", alignItems: "center", gap: "3px" }}>
+                        <TypeIcon size={10} /> {typeInfo.label}
+                      </span>
+                      {post.batch_messages && (
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "#8B5CF6", background: "rgba(139, 92, 246, 0.08)", padding: "2px 8px", borderRadius: "10px" }}>
+                          +{post.batch_messages.length} msgs
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: STATUS_COLORS[post.status], display: "flex", alignItems: "center", gap: "4px", textTransform: "uppercase" }}>
+                      {post.status === "sent" && <CheckCircle size={12} />}
+                      {post.status === "failed" && <XCircle size={12} />}
+                      {post.status === "pending" && <Clock size={12} />}
+                      {post.status}
                     </span>
-                    <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text-muted)", background: "var(--bg-tertiary)", padding: "2px 8px", borderRadius: "10px", display: "flex", alignItems: "center", gap: "3px" }}>
-                      <TypeIcon size={10} /> {typeInfo.label}
+                  </div>
+                  <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px", whiteSpace: "pre-wrap", maxHeight: "80px", overflow: "hidden" }}>
+                    {post.content}
+                  </p>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)" }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <CalendarClock size={11} /> {new Date(post.scheduled_at.endsWith("Z") ? post.scheduled_at : post.scheduled_at + "Z").toLocaleString()}
                     </span>
-                    {post.batch_messages && (
-                      <span style={{ fontSize: "11px", fontWeight: 600, color: "#8B5CF6", background: "rgba(139, 92, 246, 0.08)", padding: "2px 8px", borderRadius: "10px" }}>
-                        +{post.batch_messages.length} msgs
+                    {post.is_recurring && (
+                      <span style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--warning)" }}>
+                        <Repeat size={11} /> {post.recurrence_rule}
                       </span>
                     )}
+                    <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
+                      {post.status === "pending" && (
+                        <>
+                          <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleEdit(post)}>
+                            <Edit2 size={11} /> Edit
+                          </button>
+                          <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleSendNow(post.id)}>
+                            <Send size={11} /> Send Now
+                          </button>
+                        </>
+                      )}
+                      <button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleDelete(post.id)}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
                   </div>
-                  <span style={{ fontSize: "11px", fontWeight: 700, color: STATUS_COLORS[post.status], display: "flex", alignItems: "center", gap: "4px", textTransform: "uppercase" }}>
-                    {post.status === "sent" && <CheckCircle size={12} />}
-                    {post.status === "failed" && <XCircle size={12} />}
-                    {post.status === "pending" && <Clock size={12} />}
-                    {post.status}
-                  </span>
-                </div>
-                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "8px", whiteSpace: "pre-wrap", maxHeight: "80px", overflow: "hidden" }}>
-                  {post.content}
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <CalendarClock size={11} /> {new Date(post.scheduled_at.endsWith("Z") ? post.scheduled_at : post.scheduled_at + "Z").toLocaleString()}
-                  </span>
-                  {post.is_recurring && (
-                    <span style={{ display: "flex", alignItems: "center", gap: "4px", color: "var(--warning)" }}>
-                      <Repeat size={11} /> {post.recurrence_rule}
-                    </span>
+                  {post.error_message && (
+                    <p style={{ marginTop: "6px", fontSize: "12px", color: "var(--danger)", padding: "4px 8px", background: "rgba(239,68,68,0.06)", borderRadius: "6px" }}>
+                      {post.error_message}
+                    </p>
                   )}
-                  <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
-                    {post.status === "pending" && (
-                      <>
-                        <button className="btn btn-secondary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleEdit(post)}>
-                          <Edit2 size={11} /> Edit
-                        </button>
-                        <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleSendNow(post.id)}>
-                          <Send size={11} /> Send Now
-                        </button>
-                      </>
-                    )}
-                    <button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleDelete(post.id)}>
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
                 </div>
-                {post.error_message && (
-                  <p style={{ marginTop: "6px", fontSize: "12px", color: "var(--danger)", padding: "4px 8px", background: "rgba(239,68,68,0.06)", borderRadius: "6px" }}>
-                    {post.error_message}
-                  </p>
-                )}
               </div>
             );
           })}

@@ -10,8 +10,10 @@ from backend.config import settings
 database_url = settings.DATABASE_URL
 try:
     if database_url.startswith("mysql"):
-        # Just check if we can build engine, we verify actual connection on query
         engine = create_engine(database_url, pool_recycle=3600, pool_pre_ping=True)
+        # Try to connect to verify it's active
+        with engine.connect() as conn:
+            pass
     else:
         engine = create_engine(database_url, connect_args={"check_same_thread": False} if "sqlite" in database_url else {})
 except Exception as e:
@@ -459,10 +461,14 @@ def ensure_saas_columns():
                     columns = _table_columns(conn, table_name)
                     if column_name not in columns:
                         conn.execute(text("ALTER TABLE tg_scheduled_posts ADD COLUMN message_type VARCHAR(20) DEFAULT 'text'"))
+                    elif "mysql" in str(engine.dialect.name).lower():
+                        conn.execute(text("ALTER TABLE tg_scheduled_posts MODIFY COLUMN message_type VARCHAR(20) DEFAULT 'text'"))
                 elif table_name == "tg_scheduled_posts" and column_name == "batch_messages":
                     columns = _table_columns(conn, table_name)
                     if column_name not in columns:
                         conn.execute(text("ALTER TABLE tg_scheduled_posts ADD COLUMN batch_messages TEXT"))
+                    elif "mysql" in str(engine.dialect.name).lower():
+                        conn.execute(text("ALTER TABLE tg_scheduled_posts MODIFY COLUMN batch_messages TEXT"))
                 else:
                     _add_nullable_int_column(conn, table_name, column_name)
             except Exception as e:

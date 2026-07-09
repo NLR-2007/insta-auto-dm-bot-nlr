@@ -1,7 +1,28 @@
-// Client API connector — URL is loaded from environment variable (hidden from users)
-const BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+// Check for ?api=... query parameter to dynamically set backend URL
+if (typeof window !== "undefined") {
+  const urlParams = new URLSearchParams(window.location.search);
+  const apiParam = urlParams.get('api');
+  if (apiParam) {
+    localStorage.setItem('gg_api_url', apiParam);
+    // Clean the URL by removing the query parameter from browser history
+    const cleanUrl = window.location.pathname + window.location.search.replace(/[?&]api=[^&]+/, '').replace(/^&/, '?');
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+}
+
+export let BASE_URL = (typeof window !== "undefined" && localStorage.getItem("gg_api_url") || import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export const getApiUrl = () => BASE_URL;
+
+export const setApiUrl = (url) => {
+  if (url) {
+    localStorage.setItem("gg_api_url", url);
+    BASE_URL = url.replace(/\/$/, "");
+  } else {
+    localStorage.removeItem("gg_api_url");
+    BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  }
+};
 
 // ─── Token helpers ───────────────────────────────────────────────────────────
 export const getToken = () => localStorage.getItem("gg_token");

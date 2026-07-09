@@ -1,6 +1,6 @@
 @echo off
-title GramGlide Auto DM - Python Backend
-echo Starting GramGlide Auto DM Python Backend Service...
+title Lyvora - Python Backend
+echo Starting Lyvora Python Backend Service...
 echo.
 
 if not exist "venv" (

@@ -118,6 +118,10 @@ class AdminUserDetailResponse(BaseModel):
     pending: int = 0
     tg_bots: int = 0
     tg_channels: int = 0
+    tg_posts_sent: int = 0
+    ig_cost: float = 0.0
+    tg_cost: float = 0.0
+    total_cost: float = 0.0
 
     class Config:
         from_attributes = True
@@ -135,6 +139,9 @@ class AdminSystemStatsResponse(BaseModel):
     total_tg_channels: int = 0
     total_tg_posts_sent: int = 0
     total_tg_posts_pending: int = 0
+    total_ig_cost: float = 0.0
+    total_tg_cost: float = 0.0
+    total_system_cost: float = 0.0
 
 
 # ── Telegram Schemas ──────────────────────────────────────────────────────────
@@ -272,6 +279,11 @@ class AnalyticsDashboardResponse(BaseModel):
     total_contacts: int
     total_templates: int
     total_accounts: int
+    total_ig_sent: int = 0
+    total_tg_sent: int = 0
+    ig_cost: float = 0.0
+    tg_cost: float = 0.0
+    total_cost: float = 0.0
     time_series: List[AnalyticsPointSchema]
 
 

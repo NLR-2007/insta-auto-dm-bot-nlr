@@ -22,7 +22,7 @@ import {
   Shield, LogOut, ChevronDown, Send,
   Image, Bell, Calendar, Contact
 } from "lucide-react";
-import { getToken, getAuthUser, logout, apiFetch } from "./api";
+import { getToken, getAuthUser, logout, apiFetch, getApiUrl, setApiUrl } from "./api";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -219,7 +219,19 @@ export default function App() {
         {/* ── Sidebar footer ────────────────────────────────────────────────── */}
         <div className="sidebar-footer">
           {/* Connection dot */}
-          <div className="sidebar-connection">
+          <div 
+            className="sidebar-connection"
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              const currentUrl = getApiUrl();
+              const newUrl = prompt("Configure Backend API Server URL (e.g. ngrok URL or localhost):", currentUrl);
+              if (newUrl !== null) {
+                setApiUrl(newUrl.trim());
+                window.location.reload();
+              }
+            }}
+            title="Click to configure backend API URL"
+          >
             <div
               className="connection-dot"
               style={{

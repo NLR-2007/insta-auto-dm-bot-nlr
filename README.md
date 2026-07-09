@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="lyvora_banner.png" alt="Lyvora Dashboard Mockup" width="100%" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Lyvora-Leading%20Your%20Vision-F97316?style=for-the-badge&logo=instagram&logoColor=white" alt="Lyvora - Leading Your Vision with Optimized Reliable Automation" />
 </p>
 
@@ -26,9 +30,10 @@
 
 ---
 
+
 ## Table of Contents
 
-1. [What is Lyvora?](#what-is-gramglide)
+1. [What is Lyvora?](#what-is-lyvora)
 2. [Key Features](#key-features)
 3. [System Architecture](#system-architecture)
 4. [Tech Stack](#tech-stack)

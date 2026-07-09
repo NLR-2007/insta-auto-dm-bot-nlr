@@ -20,6 +20,8 @@ class TelegramBotService:
     def __init__(self):
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._last_update_ids = {} # maps bot_id to last processed update_id
+        self._initialized_bots = set()
 
     @property
     def is_running(self) -> bool:
@@ -279,10 +281,31 @@ class TelegramBotService:
         try:
             active_bots = db.query(TgBotConfig).filter(TgBotConfig.is_active == True).all()
             for bot in active_bots:
+                if bot.id not in self._initialized_bots:
+                    try:
+                        updates = await self.api_call(bot.bot_token, "getUpdates", limit=1, offset=-1)
+                        if updates:
+                            self._last_update_ids[bot.id] = updates[-1]["update_id"]
+                    except Exception:
+                        pass
+                    self._initialized_bots.add(bot.id)
+                    continue
+
+                last_id = self._last_update_ids.get(bot.id)
+                params = {"limit": 50}
+                if last_id is not None:
+                    params["offset"] = last_id + 1
+
                 try:
-                    updates = await self.api_call(bot.bot_token, "getUpdates", limit=50, offset=-50)
+                    updates = await self.api_call(bot.bot_token, "getUpdates", **params)
                 except Exception:
                     continue
+
+                if not updates:
+                    continue
+
+                max_update_id = max(u["update_id"] for u in updates)
+                self._last_update_ids[bot.id] = max_update_id
 
                 rules_by_chat = {}
                 for channel in bot.channels:
@@ -294,79 +317,100 @@ class TelegramBotService:
                         rules_by_chat[channel.chat_id] = rules
 
                 for update in updates:
+                    # 1. Process message updates (for keywords, anti-link, and welcome)
                     msg = update.get("message")
-                    if not msg:
-                        continue
+                    if msg:
+                        chat_id = str(msg["chat"]["id"])
+                        if chat_id in rules_by_chat:
+                            text = msg.get("text", "")
+                            for rule in rules_by_chat[chat_id]:
+                                config = json.loads(rule.config)
 
-                    chat_id = str(msg["chat"]["id"])
-                    if chat_id not in rules_by_chat:
-                        continue
-
-                    text = msg.get("text", "")
-                    for rule in rules_by_chat[chat_id]:
-                        config = json.loads(rule.config)
-
-                        if rule.rule_type == "keyword_ban":
-                            keywords = [k.strip().lower() for k in config.get("keywords", "").split(",")]
-                            if any(kw in text.lower() for kw in keywords if kw):
-                                try:
-                                    await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
-                                    log_to_db("INFO", f"[TG] Deleted message with banned keyword in {chat_id}")
-                                except Exception:
-                                    pass
-
-                        elif rule.rule_type == "anti_link":
-                            if config.get("enabled") and ("http://" in text or "https://" in text or "t.me/" in text):
-                                try:
-                                    await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
-                                    log_to_db("INFO", f"[TG] Deleted message with link in {chat_id}")
-                                except Exception:
-                                    pass
-
-                        elif rule.rule_type == "welcome":
-                            new_members = msg.get("new_chat_members", [])
-                            if new_members and config.get("message"):
-                                for member in new_members:
-                                    name = member.get("first_name", "there")
-                                    welcome_text = config["message"].replace("{name}", name)
-                                    try:
-                                        await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode="HTML")
-                                    except Exception as html_err:
-                                        if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
-                                            try:
-                                                await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode=None)
-                                            except Exception:
-                                                pass
-                                        else:
+                                if rule.rule_type == "keyword_ban":
+                                    keywords = [k.strip().lower() for k in config.get("keywords", "").split(",")]
+                                    if any(kw in text.lower() for kw in keywords if kw):
+                                        try:
+                                            await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
+                                            log_to_db("INFO", f"[TG] Deleted message with banned keyword in {chat_id}")
+                                        except Exception:
                                             pass
 
-                        elif rule.rule_type == "custom":
-                            pattern = config.get("pattern", "")
-                            action = config.get("action", "delete")
-                            match_mode = config.get("match_mode", "contains")
-                            reply_text = config.get("reply_text", "")
-                            matched = False
-                            if match_mode == "regex":
-                                try:
-                                    matched = bool(re.search(pattern, text, re.IGNORECASE))
-                                except re.error:
-                                    matched = False
-                            elif match_mode == "exact":
-                                matched = text.strip().lower() == pattern.strip().lower()
-                            else:
-                                matched = pattern.lower() in text.lower()
+                                elif rule.rule_type == "anti_link":
+                                    if config.get("enabled") and ("http://" in text or "https://" in text or "t.me/" in text):
+                                        try:
+                                            await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
+                                            log_to_db("INFO", f"[TG] Deleted message with link in {chat_id}")
+                                        except Exception:
+                                            pass
 
-                            if matched and text:
-                                try:
-                                    if action in ("delete", "delete_and_warn"):
-                                        await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
-                                        log_to_db("INFO", f"[TG] Custom rule deleted message in {chat_id}")
-                                    if action in ("warn", "delete_and_warn") and reply_text:
-                                        user_name = msg.get("from", {}).get("first_name", "User")
-                                        warn_text = reply_text.replace("{name}", user_name)
-                                        await self._send_single(bot.bot_token, chat_id, warn_text)
-                                except Exception:
-                                    pass
+                                elif rule.rule_type == "welcome":
+                                    new_members = msg.get("new_chat_members", [])
+                                    if new_members and config.get("message"):
+                                        for member in new_members:
+                                            name = member.get("first_name", "there")
+                                            welcome_text = config["message"].replace("{name}", name)
+                                            try:
+                                                await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode="HTML")
+                                                log_to_db("INFO", f"[TG] Sent welcome message to {name} via new_chat_members event in {chat_id}")
+                                            except Exception as html_err:
+                                                if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                                    try:
+                                                        await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode=None)
+                                                    except Exception:
+                                                        pass
+
+                                elif rule.rule_type == "custom":
+                                    pattern = config.get("pattern", "")
+                                    action = config.get("action", "delete")
+                                    match_mode = config.get("match_mode", "contains")
+                                    reply_text = config.get("reply_text", "")
+                                    matched = False
+                                    if match_mode == "regex" and text:
+                                        try:
+                                            matched = bool(re.search(pattern, text, re.IGNORECASE))
+                                        except re.error:
+                                            matched = False
+                                    elif match_mode == "exact" and text:
+                                        matched = text.strip().lower() == pattern.strip().lower()
+                                    elif text:
+                                        matched = pattern.lower() in text.lower()
+
+                                    if matched and text:
+                                        try:
+                                            if action in ("delete", "delete_and_warn"):
+                                                await self.delete_message(bot.bot_token, chat_id, msg["message_id"])
+                                                log_to_db("INFO", f"[TG] Custom rule deleted message in {chat_id}")
+                                            if action in ("warn", "delete_and_warn") and reply_text:
+                                                user_name = msg.get("from", {}).get("first_name", "User")
+                                                warn_text = reply_text.replace("{name}", user_name)
+                                                await self._send_single(bot.bot_token, chat_id, warn_text)
+                                        except Exception:
+                                            pass
+
+                    # 2. Process chat_member status change updates (joins and manual additions)
+                    chat_member_update = update.get("chat_member")
+                    if chat_member_update:
+                        chat_id = str(chat_member_update["chat"]["id"])
+                        if chat_id in rules_by_chat:
+                            old_status = chat_member_update["old_chat_member"]["status"]
+                            new_status = chat_member_update["new_chat_member"]["status"]
+                            if new_status == "member" and old_status not in ("member", "administrator", "creator"):
+                                for rule in rules_by_chat[chat_id]:
+                                    if rule.rule_type == "welcome":
+                                        config = json.loads(rule.config)
+                                        if config.get("message"):
+                                            member = chat_member_update["new_chat_member"]["user"]
+                                            name = member.get("first_name", "there")
+                                            welcome_text = config["message"].replace("{name}", name)
+                                            try:
+                                                await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode="HTML")
+                                                log_to_db("INFO", f"[TG] Sent welcome message to {name} via chat_member event in {chat_id}")
+                                            except Exception as html_err:
+                                                if "parse" in str(html_err).lower() or "entities" in str(html_err).lower():
+                                                    try:
+                                                        await self.send_message(bot.bot_token, chat_id, welcome_text, parse_mode=None)
+                                                    except Exception:
+                                                        pass
 
         except Exception as e:
             log_to_db("ERROR", f"[TG] Moderation error: {e}")

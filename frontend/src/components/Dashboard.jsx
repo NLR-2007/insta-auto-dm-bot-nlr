@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { apiFetch, getApiUrl } from "../api";
-import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock, Loader2, TrendingUp, Users, FileText, UserCheck } from "lucide-react";
+import { Play, Square, RefreshCw, Send, AlertTriangle, CheckCircle, Clock, Loader2, TrendingUp, Users, FileText, UserCheck, Coins } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 
 export default function Dashboard() {
@@ -206,6 +206,14 @@ export default function Dashboard() {
           <div className="stat-icon" style={{ color: "#f59e0b" }}><UserCheck size={20} /></div>
           <div className="stat-label">Accounts</div>
           <div className="stat-value">{analytics?.total_accounts ?? 0}</div>
+        </div>
+        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #10b981" }}>
+          <div className="stat-icon" style={{ color: "#10b981" }}><Coins size={20} /></div>
+          <div className="stat-label" title="Instagram (₹0.45/msg) & Telegram (₹0.27/msg)">Total Cost</div>
+          <div className="stat-value">₹{(analytics?.total_cost ?? 0).toFixed(2)}</div>
+          <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "-4px" }}>
+            ₹{(analytics?.ig_cost ?? 0).toFixed(2)} IG / ₹{(analytics?.tg_cost ?? 0).toFixed(2)} TG
+          </div>
         </div>
       </div>
 

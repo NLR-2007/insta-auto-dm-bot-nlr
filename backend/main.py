@@ -1102,9 +1102,21 @@ def admin_list_users(current_admin: User = Depends(get_current_admin), db: Sessi
         tg_bot_objs = db.query(TgBotConfig).filter(TgBotConfig.user_id == u.id).all()
         tg_bots_count = len(tg_bot_objs)
         tg_channels_count = 0
+        tg_posts_sent = 0
         if tg_bot_objs:
             tg_bot_ids = [b.id for b in tg_bot_objs]
-            tg_channels_count = db.query(TgChannel).filter(TgChannel.bot_id.in_(tg_bot_ids)).count()
+            tg_channels = db.query(TgChannel).filter(TgChannel.bot_id.in_(tg_bot_ids)).all()
+            tg_channels_count = len(tg_channels)
+            if tg_channels:
+                ch_ids = [ch.id for ch in tg_channels]
+                tg_posts_sent = db.query(TgScheduledPost).filter(
+                    TgScheduledPost.channel_id.in_(ch_ids),
+                    TgScheduledPost.status == "sent"
+                ).count()
+
+        ig_cost = round(dms_sent * 0.45, 2)
+        tg_cost = round(tg_posts_sent * 0.27, 2)
+        total_cost = round(ig_cost + tg_cost, 2)
 
         acct_schemas = [
             {"id": a.id, "username": a.username, "status": a.status,
@@ -1126,6 +1138,10 @@ def admin_list_users(current_admin: User = Depends(get_current_admin), db: Sessi
             "pending": pending,
             "tg_bots": tg_bots_count,
             "tg_channels": tg_channels_count,
+            "tg_posts_sent": tg_posts_sent,
+            "ig_cost": ig_cost,
+            "tg_cost": tg_cost,
+            "total_cost": total_cost,
         })
     return result
 
@@ -1173,6 +1189,10 @@ def admin_system_stats(current_admin: User = Depends(get_current_admin), db: Ses
     bot_running_flag = bot_module.BOT_RUNNING
     tg_running = telegram_service.is_running
 
+    total_ig_cost = round((total_targets_sent + total_comments_sent) * 0.45, 2)
+    total_tg_cost = round(total_tg_posts_sent * 0.27, 2)
+    total_system_cost = round(total_ig_cost + total_tg_cost, 2)
+
     return {
         "ig_bot_running": bot_running_flag,
         "tg_service_running": tg_running,
@@ -1186,6 +1206,9 @@ def admin_system_stats(current_admin: User = Depends(get_current_admin), db: Ses
         "total_tg_channels": total_tg_channels,
         "total_tg_posts_sent": total_tg_posts_sent,
         "total_tg_posts_pending": total_tg_posts_pending,
+        "total_ig_cost": total_ig_cost,
+        "total_tg_cost": total_tg_cost,
+        "total_system_cost": total_system_cost,
     }
 
 
@@ -1282,6 +1305,10 @@ def tg_list_bots(current_user: User = Depends(get_current_user), db: Session = D
             "id": b.id, "bot_username": b.bot_username, "bot_name": b.bot_name,
             "is_active": b.is_active, "created_at": b.created_at.isoformat(),
             "channel_count": len(b.channels),
+            "channels": [
+                {"id": ch.id, "chat_id": ch.chat_id, "title": ch.title, "username": None, "chat_type": ch.chat_type}
+                for ch in b.channels
+            ]
         }
         for b in bots
     ]
@@ -1294,6 +1321,21 @@ def tg_delete_bot(bot_id: int, current_user: User = Depends(get_current_user), d
     if not bot:
         raise HTTPException(404, "Bot not found")
     db.delete(bot)
+    db.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/tg/channels/{channel_id}")
+def tg_delete_channel(channel_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    workspace = active_workspace_for_user(db, current_user)
+    channel = db.query(TgChannel).join(TgBotConfig).filter(
+        TgChannel.id == channel_id,
+        TgBotConfig.user_id == current_user.id,
+        TgBotConfig.workspace_id == workspace.id
+    ).first()
+    if not channel:
+        raise HTTPException(404, "Channel/group not found")
+    db.delete(channel)
     db.commit()
     return {"ok": True}
 
@@ -1462,6 +1504,7 @@ def tg_list_posts(current_user: User = Depends(get_current_user), workspace: Wor
             "id": p.id, "content": p.content,
             "message_type": getattr(p, "message_type", "text") or "text",
             "media_type": p.media_type,
+            "media_path": p.media_path,
             "scheduled_at": p.scheduled_at.isoformat(),
             "status": p.status, "is_recurring": p.is_recurring,
             "recurrence_rule": p.recurrence_rule,
@@ -1535,12 +1578,39 @@ async def tg_send_now(post_id: int, current_user: User = Depends(get_current_use
     channel = post.channel
     bot = channel.bot
     try:
-        if post.media_type == "photo" and post.media_path:
-            await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
-        elif post.media_type == "document" and post.media_path:
-            await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
+        batch = None
+        if post.batch_messages:
+            try:
+                batch = json.loads(post.batch_messages)
+            except Exception:
+                batch = None
+
+        if batch and isinstance(batch, list):
+            if post.media_type == "photo" and post.media_path:
+                await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
+            elif post.media_type == "document" and post.media_path:
+                await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
+            else:
+                await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
+
+            for msg in batch:
+                await asyncio.sleep(1)
+                content = msg.get("content", "")
+                m_type = msg.get("media_type")
+                m_path = msg.get("media_path")
+                if m_type == "photo" and m_path:
+                    await telegram_service.send_photo(bot.bot_token, channel.chat_id, m_path, content)
+                elif m_type == "document" and m_path:
+                    await telegram_service.send_document(bot.bot_token, channel.chat_id, m_path, content)
+                else:
+                    await telegram_service.send_message(bot.bot_token, channel.chat_id, content)
         else:
-            await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
+            if post.media_type == "photo" and post.media_path:
+                await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
+            elif post.media_type == "document" and post.media_path:
+                await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
+            else:
+                await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
 
         post.status = "sent"
         post.sent_at = datetime.utcnow()
@@ -1669,6 +1739,35 @@ def analytics_dashboard(
     total_templates = db.query(MessageTemplate).filter(MessageTemplate.workspace_id == workspace.id).count()
     total_accounts = db.query(Account).filter(Account.workspace_id == workspace.id).count()
 
+    total_comments_sent = db.query(ProcessedComment).join(MonitoredPost).join(Account).filter(
+        Account.workspace_id == workspace.id,
+        ProcessedComment.processed_at >= cutoff,
+        ProcessedComment.status == "sent"
+    ).count()
+
+    total_comments_failed = db.query(ProcessedComment).join(MonitoredPost).join(Account).filter(
+        Account.workspace_id == workspace.id,
+        ProcessedComment.processed_at >= cutoff,
+        ProcessedComment.status == "failed"
+    ).count()
+
+    tg_bot_objs = db.query(TgBotConfig).filter(TgBotConfig.workspace_id == workspace.id).all()
+    tg_posts_sent = 0
+    if tg_bot_objs:
+        tg_bot_ids = [b.id for b in tg_bot_objs]
+        tg_channels = db.query(TgChannel).filter(TgChannel.bot_id.in_(tg_bot_ids)).all()
+        if tg_channels:
+            ch_ids = [ch.id for ch in tg_channels]
+            tg_posts_sent = db.query(TgScheduledPost).filter(
+                TgScheduledPost.channel_id.in_(ch_ids),
+                TgScheduledPost.status == "sent",
+                TgScheduledPost.sent_at >= cutoff
+            ).count()
+
+    ig_cost = round((total_sent + total_comments_sent) * 0.45, 2)
+    tg_cost = round(tg_posts_sent * 0.27, 2)
+    total_cost = round(ig_cost + tg_cost, 2)
+
     rows = (
         db.query(
             func.date(Target.created_at).label("day"),
@@ -1692,12 +1791,17 @@ def analytics_dashboard(
     time_series = sorted(day_map.values(), key=lambda x: x["date"])
 
     return AnalyticsDashboardResponse(
-        total_sent=total_sent,
-        total_failed=total_failed,
+        total_sent=total_sent + total_comments_sent,
+        total_failed=total_failed + total_comments_failed,
         total_pending=total_pending,
         total_contacts=total_contacts,
         total_templates=total_templates,
         total_accounts=total_accounts,
+        total_ig_sent=total_sent + total_comments_sent,
+        total_tg_sent=tg_posts_sent,
+        ig_cost=ig_cost,
+        tg_cost=tg_cost,
+        total_cost=total_cost,
         time_series=[AnalyticsPointSchema(**p) for p in time_series],
     )
 

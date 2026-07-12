@@ -151,7 +151,7 @@ class TgBotConfigCreate(BaseModel):
 
 class TgScheduledPostCreate(BaseModel):
     channel_id: int
-    content: str = Field(..., min_length=1)
+    content: str = ""
     scheduled_at: datetime
     message_type: str = "text"
     media_type: Optional[str] = None

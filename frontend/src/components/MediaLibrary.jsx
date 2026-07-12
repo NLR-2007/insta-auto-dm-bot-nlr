@@ -4,6 +4,7 @@ import {
   Upload, Trash2, Image, Film, FileText, Music, FolderOpen,
   Search, Grid, List, Download, Eye, Loader2, X
 } from "lucide-react";
+import AuthenticatedMedia from "./AuthenticatedMedia";
 
 export default function MediaLibrary() {
   const [files, setFiles] = useState([]);
@@ -12,6 +13,8 @@ export default function MediaLibrary() {
   const [filter, setFilter] = useState({ folder: "", file_type: "" });
   const [viewMode, setViewMode] = useState("grid");
   const [preview, setPreview] = useState(null);
+  const [presentationPreview, setPresentationPreview] = useState(null);
+  const [previewError, setPreviewError] = useState("");
   const [dragOver, setDragOver] = useState(false);
 
   const fetchFiles = async () => {
@@ -41,11 +44,15 @@ export default function MediaLibrary() {
         formData.append("file", file);
         const url = `${getApiUrl()}/api/media/upload?folder=${filter.folder || "general"}`;
         const token = getToken();
-        await fetch(url, {
+        const response = await fetch(url, {
           method: "POST",
           headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: formData,
         });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(`${file.name}: ${payload.detail || `Upload failed (${response.status})`}`);
+        }
       }
       await fetchFiles();
     } catch (e) {
@@ -89,6 +96,27 @@ export default function MediaLibrary() {
 
   const fileUrl = (id) => `${getApiUrl()}/api/media/${id}/file`;
 
+  useEffect(() => {
+    if (!preview?.original_name?.toLowerCase().endsWith(".pptx")) { setPresentationPreview(null); setPreviewError(""); return; }
+    setPresentationPreview(null); setPreviewError("");
+    apiFetch(`/api/media/${preview.id}/presentation-preview`)
+      .then(setPresentationPreview)
+      .catch((error) => setPreviewError(error.message));
+  }, [preview]);
+
+  const handleDownload = async (file) => {
+    try {
+      const response = await fetch(fileUrl(file.id), { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!response.ok) throw new Error("Download failed");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.original_name;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) { alert(error.message); }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       {/* Toolbar */}
@@ -116,7 +144,7 @@ export default function MediaLibrary() {
           <label className="btn btn-primary" style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}>
             {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
             Upload
-            <input type="file" multiple hidden onChange={e => handleUpload(Array.from(e.target.files))} />
+            <input type="file" multiple accept="image/*,video/*,audio/*,.pdf,.ppt,.pptx,.doc,.docx,.txt,.csv" hidden onChange={e => handleUpload(Array.from(e.target.files))} />
           </label>
         </div>
       </div>
@@ -152,7 +180,7 @@ export default function MediaLibrary() {
                   onClick={() => setPreview(f)}
                 >
                   {f.file_type === "image" ? (
-                    <img src={fileUrl(f.id)} alt={f.original_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} loading="lazy" />
+                    <AuthenticatedMedia src={fileUrl(f.id)} alt={f.original_name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   ) : (
                     <div style={{ color: "var(--text-muted)" }}>{typeIcon(f.file_type)}</div>
                   )}
@@ -205,24 +233,31 @@ export default function MediaLibrary() {
             <button className="btn btn-secondary" style={{ position: "absolute", top: "12px", right: "12px", padding: "4px" }} onClick={() => setPreview(null)}><X size={18} /></button>
             <h3 style={{ fontSize: "16px", fontWeight: "600", marginBottom: "16px", paddingRight: "32px" }}>{preview.original_name}</h3>
             {preview.file_type === "image" && (
-              <img src={fileUrl(preview.id)} alt={preview.original_name} style={{ width: "100%", borderRadius: "8px" }} />
+              <AuthenticatedMedia src={fileUrl(preview.id)} alt={preview.original_name} style={{ width: "100%", borderRadius: "8px" }} />
             )}
             {preview.file_type === "video" && (
-              <video src={fileUrl(preview.id)} controls style={{ width: "100%", borderRadius: "8px" }} />
+              <AuthenticatedMedia as="video" src={fileUrl(preview.id)} controls style={{ width: "100%", borderRadius: "8px" }} />
             )}
             {preview.file_type === "audio" && (
-              <audio src={fileUrl(preview.id)} controls style={{ width: "100%" }} />
+              <AuthenticatedMedia as="audio" src={fileUrl(preview.id)} controls style={{ width: "100%" }} />
             )}
-            {preview.file_type === "document" && (
+            {preview.file_type === "document" && preview.original_name.toLowerCase().endsWith(".pptx") && (
+              <div className="ppt-preview">
+                {!presentationPreview && !previewError && <div className="media-picker-empty"><Loader2 className="animate-spin" size={18}/> Preparing slide preview…</div>}
+                {previewError && <div className="auth-alert auth-alert-error">{previewError}</div>}
+                {presentationPreview && <><div className="ppt-preview-meta">{presentationPreview.slide_count} slides · Text preview</div><div className="ppt-slide-grid">{presentationPreview.slides.map((slide) => <article key={slide.number} className="ppt-slide"><span>Slide {slide.number}</span><div>{slide.text.length ? slide.text.map((line, index) => <p key={index}>{line}</p>) : <p className="ppt-empty">No text on this slide</p>}</div></article>)}</div></>}
+              </div>
+            )}
+            {preview.file_type === "document" && !preview.original_name.toLowerCase().endsWith(".pptx") && (
               <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
                 <FileText size={48} />
                 <p style={{ marginTop: "12px" }}>Preview not available for this file type</p>
               </div>
             )}
             <div style={{ marginTop: "16px", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <a href={fileUrl(preview.id)} download={preview.original_name} className="btn btn-primary" style={{ textDecoration: "none" }}>
+              <button type="button" onClick={() => handleDownload(preview)} className="btn btn-primary">
                 <Download size={14} /> Download
-              </a>
+              </button>
               <button className="btn btn-danger" onClick={() => { handleDelete(preview.id); }}><Trash2 size={14} /> Delete</button>
             </div>
           </div>

@@ -20,7 +20,7 @@ import {
   LayoutDashboard, UserCheck, Users, Mail,
   Settings as SettingsIcon, MessageSquare, Menu, X,
   Shield, LogOut, ChevronDown, Send,
-  Image, Bell, Calendar, Contact
+  Image, Bell, Calendar, Contact, Sparkles, Wifi, WifiOff
 } from "lucide-react";
 import { getToken, getAuthUser, logout, apiFetch, getApiUrl, setApiUrl } from "./api";
 
@@ -194,24 +194,27 @@ export default function App() {
 
       {/* ── Sidebar ───────────────────────────────────────────────────────────── */}
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div className="brand">
-          <Mail size={24} style={{ stroke: "url(#brand-grad)" }} />
-          <span>Lyvora</span>
+        <div className="brand brand-lockup">
+          <div className="brand-mark"><Mail size={21} /></div>
+          <div className="brand-copy"><span>Lyvora</span><small>Growth workspace</small></div>
         </div>
 
         <nav className="nav-menu">
+          <div className="nav-section-label">Workspace</div>
           {navItems.map(({ id, label, icon: Icon, isAdmin, isTelegram }) => (
             <React.Fragment key={id}>
               {isTelegram && <div className="nav-separator"><span>TELEGRAM</span></div>}
-              <div
+              <button
+                type="button"
                 id={`nav-${id}`}
                 className={`nav-item ${activeTab === id ? "active" : ""} ${isAdmin ? "nav-item-admin" : ""} ${isTelegram ? "nav-item-telegram" : ""}`}
                 onClick={() => handleNavClick(id)}
+                aria-current={activeTab === id ? "page" : undefined}
               >
                 <Icon size={18} />
                 <span>{label}</span>
                 {isAdmin && <span className="nav-admin-badge">ADMIN</span>}
-              </div>
+              </button>
             </React.Fragment>
           ))}
         </nav>
@@ -219,42 +222,24 @@ export default function App() {
         {/* ── Sidebar footer ────────────────────────────────────────────────── */}
         <div className="sidebar-footer">
           {/* Connection dot */}
-          <div 
-            className="sidebar-connection"
-            style={{ cursor: "pointer" }}
-            onClick={() => {
-              const currentUrl = getApiUrl();
-              const newUrl = prompt("Configure Backend API Server URL (e.g. ngrok URL or localhost):", currentUrl);
-              if (newUrl !== null) {
-                setApiUrl(newUrl.trim());
-                window.location.reload();
-              }
-            }}
-            title="Click to configure backend API URL"
-          >
-            <div
-              className="connection-dot"
-              style={{
-                background:
-                  connectionStatus === "active"
-                    ? "var(--success)"
-                    : connectionStatus === "checking"
-                    ? "var(--warning)"
-                    : "var(--danger)",
-                boxShadow:
-                  connectionStatus === "active"
-                    ? "0 0 6px var(--success)"
-                    : "none",
+          {currentUser?.is_admin && (
+            <div 
+              className={`sidebar-connection ${connectionStatus}`}
+              style={{ cursor: "pointer" }}
+              onClick={() => {
+                const currentUrl = getApiUrl();
+                const newUrl = prompt("Configure Backend API Server URL (e.g. ngrok URL or localhost):", currentUrl);
+                if (newUrl !== null) {
+                  setApiUrl(newUrl.trim());
+                  window.location.reload();
+                }
               }}
-            />
-            <span>
-              {connectionStatus === "active"
-                ? "API Connected"
-                : connectionStatus === "checking"
-                ? "Connecting..."
-                : "API Offline"}
-            </span>
-          </div>
+              title="Click to configure backend API URL"
+            >
+              <div className="connection-dot" />
+              <span>{connectionStatus === "active" ? "API Connected" : connectionStatus === "checking" ? "Connecting..." : "API Offline"}</span>
+            </div>
+          )}
 
           {/* User menu */}
           <div className="sidebar-user" onClick={() => setUserMenuOpen(!userMenuOpen)}>
@@ -285,13 +270,22 @@ export default function App() {
       <main className="main-content">
         {/* Page header — no tunnel input visible to users */}
         <header className="page-header">
-          <div>
+          <div className="page-heading">
+            <div className="page-eyebrow"><Sparkles size={12} /> Lyvora workspace</div>
             <h1 className="page-title">{pageTitle()}</h1>
             <p className="page-subtitle">{pageSubtitle()}</p>
           </div>
 
           {/* Compact user info chip (desktop) */}
-          <div className="header-user-chip">
+          <div className="header-actions">
+            <div className={`header-api-status ${connectionStatus}`} title="Backend API status">
+              {connectionStatus === "active" ? <Wifi size={14} /> : <WifiOff size={14} />}
+              <span>{connectionStatus === "active" ? "Live" : connectionStatus === "checking" ? "Checking" : "Offline"}</span>
+            </div>
+            <button className="header-icon-btn" onClick={() => handleNavClick("notifications")} aria-label="Open notifications">
+              <Bell size={17} />
+            </button>
+            <div className="header-user-chip">
             <div className="chip-avatar">{currentUser?.username?.[0]?.toUpperCase()}</div>
             <span>{currentUser?.username}</span>
             {currentUser?.is_admin && (
@@ -302,6 +296,7 @@ export default function App() {
             <button id="header-logout-btn" className="chip-logout-btn" onClick={handleLogout} title="Sign out">
               <LogOut size={13} />
             </button>
+            </div>
           </div>
         </header>
 

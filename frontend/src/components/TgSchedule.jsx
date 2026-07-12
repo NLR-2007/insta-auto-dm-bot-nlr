@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch, apiUpload, getApiUrl } from "../api";
+import QuickMediaPicker from "./QuickMediaPicker";
 import {
   CalendarClock, Plus, Send, Trash2, Edit2,
   CheckCircle, XCircle, Clock, Repeat, X,
   MessageSquare, Image, FileText, Layers,
   Bold, Italic, Code, Link2, Strikethrough, Underline,
-  Upload, FileUp, Eye, EyeOff,
+  Upload, FileUp, Eye, EyeOff, Library,
 } from "lucide-react";
 
 const STATUS_COLORS = {
-  pending: "var(--warning)", sent: "var(--success)", failed: "var(--danger)", cancelled: "var(--text-muted)",
+  pending: "var(--warning)", processing: "var(--info)", sent: "var(--success)", failed: "var(--danger)", cancelled: "var(--text-muted)",
 };
 
 const MSG_TYPES = [
@@ -17,6 +18,11 @@ const MSG_TYPES = [
   { value: "media", label: "Media / File", icon: FileUp },
   { value: "multi", label: "Multi", icon: Layers },
 ];
+
+const displayMediaName = (path = "") => {
+  const storedName = path.split("/").pop() || "attachment";
+  return storedName.includes("__") ? storedName.split("__").slice(1).join("__") : storedName;
+};
 
 function insertTag(textareaRef, openTag, closeTag, setContent) {
   const el = textareaRef.current;
@@ -144,6 +150,8 @@ export default function TgSchedule() {
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [templates, setTemplates] = useState([]);
   const contentRef = useRef(null);
 
   const toggleSelect = (id) => {
@@ -176,9 +184,10 @@ export default function TgSchedule() {
 
   const fetchData = async () => {
     try {
-      const [p, ch] = await Promise.all([apiFetch("/api/tg/posts"), apiFetch("/api/tg/channels")]);
+      const [p, ch, tpl] = await Promise.all([apiFetch("/api/tg/posts"), apiFetch("/api/tg/channels"), apiFetch("/api/tg/templates")]);
       setPosts(p);
       setChannels(ch);
+      setTemplates(tpl);
     } catch {}
   };
 
@@ -222,6 +231,25 @@ export default function TgSchedule() {
     return result.filename;
   };
 
+  const useLibraryMedia = async (files) => {
+    try {
+      const attachments = await Promise.all(files.map(async (file) => {
+        const result = await apiFetch(`/api/media/${file.id}/use/telegram`, { method: "POST" });
+        return {
+          id: `library-${file.id}-${Date.now()}`,
+          name: file.original_name,
+          preview: file.file_type === "image" ? `${getApiUrl()}/api/tg/uploads/${result.filename}` : null,
+          media_path: result.filename,
+          media_type: file.file_type === "image" ? "photo" : "document",
+        };
+      }));
+      setMediaFiles((items) => [...items, ...attachments]);
+      setShowLibrary(false);
+    } catch (error) {
+      setError(error.message || "Could not use library media.");
+    }
+  };
+
   const handleEdit = (post) => {
     const scheduledUtc = post.scheduled_at.endsWith("Z") ? post.scheduled_at : post.scheduled_at + "Z";
     const localDate = new Date(scheduledUtc);
@@ -245,7 +273,7 @@ export default function TgSchedule() {
     if (post.media_path) {
       loadedFiles.push({
         id: "main",
-        name: post.media_path.split("/").pop(),
+        name: displayMediaName(post.media_path),
         preview: post.media_type === "photo" ? `${getApiUrl()}/api/tg/uploads/${post.media_path}` : null,
         media_path: post.media_path,
         media_type: post.media_type,
@@ -260,7 +288,7 @@ export default function TgSchedule() {
         if (isMediaPost && !bm.content && bm.media_path) {
           loadedFiles.push({
             id: `batch-media-${idx}`,
-            name: bm.media_path.split("/").pop(),
+            name: displayMediaName(bm.media_path),
             preview: bm.media_type === "photo" ? `${getApiUrl()}/api/tg/uploads/${bm.media_path}` : null,
             media_path: bm.media_path,
             media_type: bm.media_type,
@@ -435,6 +463,13 @@ export default function TgSchedule() {
         <div className="glass-card" style={{ marginBottom: "16px", padding: "20px" }}>
           {error && <div className="auth-alert auth-alert-error" style={{ marginBottom: "12px" }}>{error}</div>}
           <form onSubmit={handleCreate}>
+            <div className="tg-template-select">
+              <label style={labelStyle}>Start from a template</label>
+              <select defaultValue="" onChange={(e) => { const template = templates.find((item) => String(item.id) === e.target.value); if (template) setForm((current) => ({ ...current, content: template.content })); }}>
+                <option value="">Choose a saved template…</option>
+                {templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}
+              </select>
+            </div>
 
             {/* ── Row 1: Type + Channel + Time ── */}
             <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
@@ -528,6 +563,9 @@ export default function TgSchedule() {
             {form.message_type === "media" && (
               <div style={{ marginBottom: "16px" }}>
                 <label style={labelStyle}>Attach Photos / Documents</label>
+                <button type="button" className="quick-media-button" onClick={() => setShowLibrary(true)}>
+                  <Library size={16} /><span><strong>Choose from Media Library</strong><small>No re-upload needed</small></span>
+                </button>
                 <FileUploadArea
                   accept="*"
                   label="Select photo or document to add"
@@ -604,7 +642,7 @@ export default function TgSchedule() {
                         <FileUploadArea
                           accept="*"
                           label="Select a photo or document to send"
-                          file={msg.file || (msg.media_path ? { name: msg.media_path.split("/").pop() } : null)}
+                          file={msg.file || (msg.media_path ? { name: displayMediaName(msg.media_path) } : null)}
                           preview={msg.filePreview}
                           onFileSelect={(f) => setBatchFile(i, f)}
                           onClear={() => { 
@@ -646,6 +684,7 @@ export default function TgSchedule() {
           </form>
         </div>
       )}
+      <QuickMediaPicker open={showLibrary} onClose={() => setShowLibrary(false)} onSelect={useLibraryMedia} />
 
       {posts.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border-color)", padding: "10px 16px", borderRadius: "10px", marginBottom: "16px" }}>
@@ -722,6 +761,7 @@ export default function TgSchedule() {
                       {post.status === "sent" && <CheckCircle size={12} />}
                       {post.status === "failed" && <XCircle size={12} />}
                       {post.status === "pending" && <Clock size={12} />}
+                      {post.status === "processing" && <RefreshCw size={12} className="animate-spin" />}
                       {post.status}
                     </span>
                   </div>
@@ -747,6 +787,11 @@ export default function TgSchedule() {
                             <Send size={11} /> Send Now
                           </button>
                         </>
+                      )}
+                      {post.status === "failed" && (
+                        <button className="btn btn-primary" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleSendNow(post.id)}>
+                          <RefreshCw size={11} /> Retry
+                        </button>
                       )}
                       <button className="btn btn-danger" style={{ padding: "4px 10px", fontSize: "11px" }} onClick={() => handleDelete(post.id)}>
                         <Trash2 size={11} />

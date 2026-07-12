@@ -111,11 +111,12 @@ export default function Dashboard() {
   })) || [];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+    <div className="dashboard-view">
       {/* Control row */}
-      <div className="glass-card control-panel">
+      <div className={`glass-card control-panel ${status.user_automation_active ? "is-running" : ""}`}>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <h2 style={{ fontSize: "20px", fontWeight: "700" }}>Execution Center</h2>
+          <div className="section-kicker">Automation control</div>
+          <h2>Execution Center</h2>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
             {!status.system_running
               ? "System is offline. An admin must start the system before you can automate."
@@ -124,7 +125,7 @@ export default function Dashboard() {
                 : "No account connected. Go to the Accounts section to connect one."}
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+        <div className="control-actions">
           {!status.system_running ? (
             <>
               <div className="status-indicator stopped">
@@ -177,37 +178,37 @@ export default function Dashboard() {
 
       {/* Stats row */}
       <div className="stats-grid">
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--accent)" }}>
+        <div className="glass-card stat-card tone-blue">
           <div className="stat-icon" style={{ color: "var(--accent)" }}><TrendingUp size={20} /></div>
           <div className="stat-label">Total Sent</div>
           <div className="stat-value">{analytics?.total_sent ?? status.total_sent}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--info)" }}>
+        <div className="glass-card stat-card tone-cyan">
           <div className="stat-icon" style={{ color: "var(--info)" }}><Clock size={20} /></div>
           <div className="stat-label">Pending</div>
           <div className="stat-value">{analytics?.total_pending ?? status.pending_count}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--danger)" }}>
+        <div className="glass-card stat-card tone-red">
           <div className="stat-icon" style={{ color: "var(--danger)" }}><AlertTriangle size={20} /></div>
           <div className="stat-label">Failed</div>
           <div className="stat-value">{analytics?.total_failed ?? status.failed_count}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid var(--success)" }}>
+        <div className="glass-card stat-card tone-green">
           <div className="stat-icon" style={{ color: "var(--success)" }}><Users size={20} /></div>
           <div className="stat-label">Contacts</div>
           <div className="stat-value">{analytics?.total_contacts ?? 0}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #8b5cf6" }}>
+        <div className="glass-card stat-card tone-violet">
           <div className="stat-icon" style={{ color: "#8b5cf6" }}><FileText size={20} /></div>
           <div className="stat-label">Templates</div>
           <div className="stat-value">{analytics?.total_templates ?? 0}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #f59e0b" }}>
+        <div className="glass-card stat-card tone-amber">
           <div className="stat-icon" style={{ color: "#f59e0b" }}><UserCheck size={20} /></div>
           <div className="stat-label">Accounts</div>
           <div className="stat-value">{analytics?.total_accounts ?? 0}</div>
         </div>
-        <div className="glass-card stat-card" style={{ borderLeft: "4px solid #10b981" }}>
+        <div className="glass-card stat-card tone-emerald">
           <div className="stat-icon" style={{ color: "#10b981" }}><Coins size={20} /></div>
           <div className="stat-label" title="Instagram (₹0.45/msg) & Telegram (₹0.27/msg)">Total Cost</div>
           <div className="stat-value">₹{(analytics?.total_cost ?? 0).toFixed(2)}</div>

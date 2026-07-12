@@ -4,7 +4,7 @@ import {
   CheckCircle, XCircle, Clock, TrendingUp, Shield,
   UserCheck, Server, Eye, Trash2, ChevronDown, ChevronUp,
   Send, Bot, Hash, Play, Pause, ToggleLeft, ToggleRight,
-  FileText, Cpu, HardDrive, Database, Flag, Plus, Save, X, Coins
+  FileText, Cpu, HardDrive, Database, Flag, Plus, Save, X, Coins, Search
 } from "lucide-react";
 import { apiFetch } from "../api";
 
@@ -23,7 +23,7 @@ function StatCard({ icon: Icon, label, value, color = "#0F172A", sub }) {
   );
 }
 
-function UserRow({ user, onToggleAdmin, onToggleEnabled, onDelete }) {
+function UserRow({ user, onToggleAdmin, onToggleEnabled, onDelete, onResetCost }) {
   const [expanded, setExpanded] = useState(false);
   const successRate = (user.dms_sent + user.dms_failed) > 0
     ? Math.round((user.dms_sent / (user.dms_sent + user.dms_failed)) * 100)
@@ -98,6 +98,10 @@ function UserRow({ user, onToggleAdmin, onToggleEnabled, onDelete }) {
               title={user.is_admin ? "Revoke admin" : "Grant admin"}>
               <Shield size={11} />
             </button>
+            <button className="btn btn-secondary" style={{ padding: "4px 8px", fontSize: "11px" }}
+              onClick={() => onResetCost(user.id, user.username)} title="Reset user cost to zero">
+              <Coins size={11} /> Reset
+            </button>
             <button className="btn btn-danger" style={{ padding: "4px 8px", fontSize: "11px" }}
               onClick={() => onDelete(user.id, user.username)} title="Delete user">
               <Trash2 size={11} />
@@ -141,9 +145,12 @@ export default function AdminPanel() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditFilter, setAuditFilter] = useState("");
   const [healthData, setHealthData] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState("");
   const [featureFlags, setFeatureFlags] = useState([]);
   const [showFlagForm, setShowFlagForm] = useState(false);
   const [flagForm, setFlagForm] = useState({ key: "", value: "on", scope: "global" });
+  const [userSearch, setUserSearch] = useState("");
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -176,11 +183,15 @@ export default function AdminPanel() {
   };
 
   const fetchHealth = async () => {
+    setHealthLoading(true);
+    setHealthError("");
     try {
       const data = await apiFetch("/api/admin/health");
       setHealthData(data);
     } catch (e) {
-      console.error(e);
+      setHealthError(e.message || "Unable to load system health.");
+    } finally {
+      setHealthLoading(false);
     }
   };
 
@@ -247,6 +258,14 @@ export default function AdminPanel() {
     }
   };
 
+  const handleResetCost = async (userId, username) => {
+    if (!window.confirm(`Reset the accumulated cost for @${username} to ₹0.00? New usage will be charged from now.`)) return;
+    try {
+      await apiFetch(`/api/admin/users/${userId}/reset-cost`, { method: "POST" });
+      fetchAll();
+    } catch (e) { alert(e.message); }
+  };
+
   const handleCreateFlag = async (e) => {
     e.preventDefault();
     try {
@@ -308,6 +327,7 @@ export default function AdminPanel() {
 
   const allRunning = stats?.ig_bot_running && stats?.tg_service_running;
   const anyRunning = stats?.ig_bot_running || stats?.tg_service_running;
+  const visibleUsers = users.filter((user) => `${user.username} ${user.email}`.toLowerCase().includes(userSearch.toLowerCase()));
 
   if (loading && !stats) {
     return (
@@ -335,8 +355,8 @@ export default function AdminPanel() {
           </button>
         ))}
         <div style={{ marginLeft: "auto" }}>
-          <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={fetchAll}>
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
+          <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={() => activeSection === "health" ? fetchHealth() : fetchAll()}>
+            <RefreshCw size={13} className={(loading || healthLoading) ? "animate-spin" : ""} /> Refresh
           </button>
         </div>
       </div>
@@ -432,18 +452,13 @@ export default function AdminPanel() {
 
       {/* USERS */}
       {activeSection === "users" && (
-        <div className="glass-card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-color)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ fontSize: "15px", fontWeight: 700 }}>
-              User Directory ({users.length})
-            </h2>
-            <div style={{ display: "flex", gap: "12px", fontSize: "12px", color: "var(--text-muted)" }}>
-              <span>{users.filter(u => u.is_enabled).length} active</span>
-              <span>{users.filter(u => !u.is_enabled).length} disabled</span>
-            </div>
+        <div className="glass-card admin-users-card">
+          <div className="admin-card-header">
+            <div><h2>User Directory</h2><p>{users.length} total · {users.filter(u => u.is_enabled).length} active · {users.filter(u => !u.is_enabled).length} disabled</p></div>
+            <div className="admin-search"><Search size={15}/><input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Search users…" /></div>
           </div>
-          <div className="table-container">
-            <table>
+          <div className="table-container admin-table-container">
+            <table className="admin-users-table">
               <thead>
                 <tr>
                   <th>User</th>
@@ -456,17 +471,18 @@ export default function AdminPanel() {
                 </tr>
               </thead>
               <tbody>
-                {users.length === 0 ? (
+                {visibleUsers.length === 0 ? (
                   <tr>
                     <td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px" }}>
                       No users found.
                     </td>
                   </tr>
                 ) : (
-                  users.map(u => (
+                  visibleUsers.map(u => (
                     <UserRow key={u.id} user={u}
                       onToggleAdmin={handleToggleAdmin}
                       onToggleEnabled={handleToggleEnabled}
+                      onResetCost={handleResetCost}
                       onDelete={handleDeleteUser} />
                   ))
                 )}
@@ -535,11 +551,15 @@ export default function AdminPanel() {
               <Cpu size={18} />
               <h2 style={{ fontSize: "15px", fontWeight: 700 }}>System Health</h2>
             </div>
-            <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={fetchHealth}>
-              <RefreshCw size={13} /> Refresh
+            <button className="btn btn-secondary" style={{ padding: "6px 12px", fontSize: "12px" }} onClick={fetchHealth} disabled={healthLoading}>
+              <RefreshCw size={13} className={healthLoading ? "animate-spin" : ""} /> Refresh
             </button>
           </div>
-          {healthData ? (
+          {healthError ? (
+            <div className="auth-alert auth-alert-error" style={{ margin: 0 }}>
+              <strong>Health check failed.</strong> {healthError}
+            </div>
+          ) : healthData ? (
             <div className="stats-grid">
               <StatCard icon={Server} label="Platform" value={healthData.platform || "—"} color="#0F172A" sub={`Python ${healthData.python_version || "?"}`} />
               <StatCard icon={Cpu} label="CPU" value={healthData.cpu_percent != null ? `${healthData.cpu_percent}%` : "—"} color={healthData.cpu_percent > 80 ? "#DC2626" : "#16A34A"} />
@@ -549,17 +569,17 @@ export default function AdminPanel() {
               <StatCard icon={Clock} label="Uptime" value={formatUptime(healthData.uptime_seconds)} color="#16A34A" />
             </div>
           ) : (
-            <div className="glass-card" style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>Loading health data...</div>
+            <div className="glass-card" style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}><RefreshCw size={18} className="animate-spin" style={{ marginRight: "8px" }} /> Loading health data...</div>
           )}
 
-          <div className="glass-card">
+          <div className="glass-card admin-service-card">
             <h3 style={{ fontSize: "14px", fontWeight: "600", marginBottom: "12px" }}>Service Status</h3>
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+            <div className="admin-service-grid">
               {[
                 { label: "Instagram Bot", running: healthData?.ig_bot_running },
                 { label: "Telegram Service", running: healthData?.tg_service_running },
               ].map(s => (
-                <div key={s.label} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 16px", borderRadius: "8px", border: "1px solid var(--border-color)" }}>
+                <div key={s.label} className={`admin-service-item ${s.running ? "running" : "stopped"}`}>
                   <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: s.running ? "var(--success)" : "var(--danger)", boxShadow: s.running ? "0 0 6px var(--success)" : "none" }} />
                   <span style={{ fontSize: "13px", fontWeight: "500" }}>{s.label}</span>
                   <span style={{ fontSize: "12px", color: s.running ? "var(--success)" : "var(--text-muted)" }}>

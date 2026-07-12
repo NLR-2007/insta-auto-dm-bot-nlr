@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { Send as SendIcon, Bot, Hash } from "lucide-react";
+import { Send as SendIcon, Bot, Hash, FileText } from "lucide-react";
 import TgBots from "./TgBots";
 import TgSchedule from "./TgSchedule";
 import TgModeration from "./TgModeration";
+import TgTemplates from "./TgTemplates";
 
 export default function TelegramPanel() {
   const [activeTab, setActiveTab] = useState("bots");
@@ -23,6 +24,7 @@ export default function TelegramPanel() {
   const tabs = [
     { id: "bots", label: "Bots & Channels", icon: Bot },
     { id: "schedule", label: "Schedule", icon: SendIcon },
+    { id: "templates", label: "Templates", icon: FileText },
     { id: "moderation", label: "Moderation", icon: Hash },
   ];
 
@@ -60,6 +62,7 @@ export default function TelegramPanel() {
 
       {activeTab === "bots" && <TgBots />}
       {activeTab === "schedule" && <TgSchedule />}
+      {activeTab === "templates" && <TgTemplates />}
       {activeTab === "moderation" && <TgModeration />}
     </div>
   );

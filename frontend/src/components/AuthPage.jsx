@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Lock, User, AtSign, ArrowRight, Loader, Eye, EyeOff, Zap, Send, BarChart3, Shield, MessageSquare } from "lucide-react";
-import { apiLogin, apiRegister, getApiUrl, setApiUrl } from "../api";
+import { Lock, User, AtSign, ArrowRight, Loader, Eye, EyeOff, Send, BarChart3, Shield, MessageSquare, Mail, Sparkles, CheckCircle2 } from "lucide-react";
+import { apiLogin, apiRegister } from "../api";
 
 export default function AuthPage({ onAuthSuccess, onBackToHome }) {
   const [mode, setMode] = useState("login");
@@ -66,14 +66,14 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
         <div className="auth-hero-content">
           <div className="auth-hero-logo">
             <div className="auth-hero-icon">
-              <Zap size={32} fill="#F97316" stroke="none" />
+              <Mail size={24} />
             </div>
-            <h1 className="auth-hero-title">Lyvora</h1>
+            <div><h1 className="auth-hero-title">Lyvora</h1><span className="auth-logo-caption">Growth workspace</span></div>
           </div>
 
-          <p className="auth-hero-subtitle">
-            Leading Your Vision with Optimized Reliable Automation. Instagram DMs + Telegram channels, unified.
-          </p>
+          <div className="auth-hero-kicker"><Sparkles size={13}/> One workspace. Two powerful channels.</div>
+          <h2 className="auth-hero-heading">Turn conversations into meaningful growth.</h2>
+          <p className="auth-hero-subtitle">Manage Instagram outreach and Telegram communities from one focused, reliable workspace.</p>
 
           <div className="auth-features">
             {features.map(({ icon: Icon, title, desc }) => (
@@ -88,6 +88,8 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
               </div>
             ))}
           </div>
+
+          <div className="auth-trust-row"><span><CheckCircle2 size={13}/> Secure workspace</span><span><CheckCircle2 size={13}/> Real-time visibility</span></div>
 
           <div className="auth-hero-footer">
             <p>Developed by</p>
@@ -123,6 +125,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
                 ? "Sign in to your dashboard"
                 : "Create your account to begin"}
             </p>
+            <div className="auth-mobile-brand"><div className="auth-mobile-mark"><Mail size={18}/></div><span>Lyvora</span></div>
           </div>
 
           <div className="auth-tabs">
@@ -248,24 +251,6 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
               {mode === "login" ? "Register here" : "Sign in"}
             </button>
           </p>
-
-          <div style={{ textAlign: "center", marginTop: "16px", marginBottom: "16px" }}>
-            <button
-              type="button"
-              className="auth-link-btn"
-              style={{ fontSize: "11px", color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
-              onClick={() => {
-                const currentUrl = getApiUrl();
-                const newUrl = prompt("Configure Backend API Server URL (e.g. ngrok URL or localhost):", currentUrl);
-                if (newUrl !== null) {
-                  setApiUrl(newUrl.trim());
-                  window.location.reload();
-                }
-              }}
-            >
-              Configure API Server
-            </button>
-          </div>
 
           {/* Mobile-only developer credit */}
           <p className="auth-mobile-credit">

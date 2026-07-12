@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import calendar
 from datetime import datetime, timedelta
 from typing import Optional
 import httpx
@@ -25,17 +26,22 @@ class TelegramBotService:
 
     @property
     def is_running(self) -> bool:
-        return self._running
+        return self._running and self._task is not None and not self._task.done()
 
     async def api_call(self, token: str, method: str, **params):
         token = decrypt_secret(token) or token
         url = TELEGRAM_API.format(token=token, method=method)
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, json=params)
-            data = resp.json()
-            if not data.get("ok"):
+            for attempt in range(4):
+                resp = await client.post(url, json=params)
+                data = resp.json()
+                if data.get("ok"):
+                    return data.get("result")
+                retry_after = data.get("parameters", {}).get("retry_after")
+                if resp.status_code == 429 and retry_after is not None and attempt < 3:
+                    await asyncio.sleep(min(float(retry_after) + 0.25, 30))
+                    continue
                 raise Exception(data.get("description", "Telegram API error"))
-            return data.get("result")
 
     async def validate_token(self, token: str) -> dict:
         return await self.api_call(token, "getMe")
@@ -71,9 +77,9 @@ class TelegramBotService:
 
         new_channels = []
         for chat_info in seen_chats.values():
-            existing = db.query(TgChannel).filter(
-                TgChannel.bot_id == bot_id,
+            existing = db.query(TgChannel).join(TgBotConfig).filter(
                 TgChannel.chat_id == chat_info["chat_id"],
+                TgBotConfig.workspace_id == bot.workspace_id,
             ).first()
             if not existing:
                 try:
@@ -139,15 +145,21 @@ class TelegramBotService:
             data["caption"] = caption
         if parse_mode:
             data["parse_mode"] = parse_mode
-        filename = os.path.basename(file_path)
+        stored_name = os.path.basename(file_path)
+        filename = stored_name.split("__", 1)[1] if "__" in stored_name else stored_name
         async with httpx.AsyncClient(timeout=60) as client:
-            with open(file_path, "rb") as f:
-                files = {field: (filename, f)}
-                resp = await client.post(url, data=data, files=files)
+            for attempt in range(4):
+                with open(file_path, "rb") as f:
+                    files = {field: (filename, f)}
+                    resp = await client.post(url, data=data, files=files)
                 result = resp.json()
-                if not result.get("ok"):
-                    raise Exception(result.get("description", "Telegram API error"))
-                return result.get("result")
+                if result.get("ok"):
+                    return result.get("result")
+                retry_after = result.get("parameters", {}).get("retry_after")
+                if resp.status_code == 429 and retry_after is not None and attempt < 3:
+                    await asyncio.sleep(min(float(retry_after) + 0.25, 30))
+                    continue
+                raise Exception(result.get("description", "Telegram API error"))
 
     async def delete_message(self, token: str, chat_id: str, message_id: int):
         return await self.api_call(
@@ -179,26 +191,24 @@ class TelegramBotService:
                     db.commit()
                     continue
 
-                try:
-                    batch = None
-                    if post.batch_messages:
-                        try:
-                            batch = json.loads(post.batch_messages)
-                        except Exception:
-                            batch = None
+                if not channel.is_active or not bot.is_active:
+                    post.status = "failed"
+                    post.error_message = "Bot or channel is inactive"
+                    db.commit()
+                    continue
 
-                    if batch and isinstance(batch, list):
-                        result = await self._send_single(bot.bot_token, channel.chat_id, post.content, post.media_type, post.media_path)
-                        for msg in batch:
-                            await asyncio.sleep(1)
-                            await self._send_single(
-                                bot.bot_token, channel.chat_id,
-                                msg.get("content", ""),
-                                msg.get("media_type"),
-                                msg.get("media_path"),
-                            )
-                    else:
-                        result = await self._send_single(bot.bot_token, channel.chat_id, post.content, post.media_type, post.media_path)
+                try:
+                    # Claim before the network call so overlapping ticks/send-now cannot duplicate it.
+                    updated = db.query(TgScheduledPost).filter(
+                        TgScheduledPost.id == post.id,
+                        TgScheduledPost.status == "pending",
+                    ).update({"status": "processing"}, synchronize_session=False)
+                    db.commit()
+                    if not updated:
+                        continue
+                    db.refresh(post)
+
+                    result = await self.send_post(bot.bot_token, channel.chat_id, post)
 
                     post.status = "sent"
                     post.sent_at = datetime.utcnow()
@@ -253,12 +263,31 @@ class TelegramBotService:
                     return await self.send_document(token, chat_id, media_path, text, parse_mode=None)
                 raise
         else:
+            if not text:
+                raise ValueError("Telegram message has no text or attachment")
             try:
                 return await self.send_message(token, chat_id, text, parse_mode="HTML")
             except Exception as e:
                 if "parse" in str(e).lower() or "entities" in str(e).lower():
                     return await self.send_message(token, chat_id, text, parse_mode=None)
                 raise
+
+    async def send_post(self, token: str, chat_id: str, post: TgScheduledPost):
+        """Single delivery path used by scheduler and send-now."""
+        batch = []
+        if post.batch_messages:
+            try:
+                decoded = json.loads(post.batch_messages)
+                batch = decoded if isinstance(decoded, list) else []
+            except (TypeError, ValueError):
+                batch = []
+        result = await self._send_single(token, chat_id, post.content or "", post.media_type, post.media_path)
+        for message in batch:
+            if not isinstance(message, dict):
+                continue
+            await asyncio.sleep(0.8)
+            await self._send_single(token, chat_id, message.get("content", ""), message.get("media_type"), message.get("media_path"))
+        return result
 
     def _calc_next_recurrence(self, current: datetime, rule: str) -> datetime:
         if rule == "hourly":
@@ -273,7 +302,8 @@ class TelegramBotService:
             if month > 12:
                 month = 1
                 year += 1
-            return current.replace(year=year, month=month)
+            day = min(current.day, calendar.monthrange(year, month)[1])
+            return current.replace(year=year, month=month, day=day)
         return current + timedelta(days=1)
 
     async def _process_moderation(self):
@@ -420,8 +450,19 @@ class TelegramBotService:
     async def start(self):
         if self._running:
             return
+        # Recover work left claimed if the previous process stopped mid-send.
+        db = SessionLocal()
+        try:
+            db.query(TgScheduledPost).filter(TgScheduledPost.status == "processing").update(
+                {"status": "pending", "error_message": "Recovered after service restart"},
+                synchronize_session=False,
+            )
+            db.commit()
+        finally:
+            db.close()
         self._running = True
         self._task = asyncio.create_task(self._loop())
+        self._task.add_done_callback(self._on_task_done)
         log_to_db("INFO", "[TG] Telegram bot service started")
 
     async def stop(self):
@@ -433,6 +474,14 @@ class TelegramBotService:
             except asyncio.CancelledError:
                 pass
         log_to_db("INFO", "[TG] Telegram bot service stopped")
+
+    def _on_task_done(self, task: asyncio.Task):
+        if task.cancelled():
+            return
+        error = task.exception()
+        if error:
+            self._running = False
+            log_to_db("ERROR", f"[TG] Worker stopped unexpectedly: {error}")
 
     async def _loop(self):
         while self._running:

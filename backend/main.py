@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.config import cors_origins, validate_runtime_config
-from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut, User, TgBotConfig, TgChannel, TgScheduledPost, TgModerationRule, TgPostLog, Workspace, WorkspaceMember, Subscription, Campaign, AutomationRunner, AuditLog, Notification, MediaFile, Contact, FeatureFlag
+from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut, User, TgBotConfig, TgChannel, TgMessageTemplate, TgScheduledPost, TgModerationRule, TgPostLog, Workspace, WorkspaceMember, Subscription, Campaign, AutomationRunner, AuditLog, Notification, MediaFile, Contact, FeatureFlag
 from backend.schemas import (
     UserRegisterSchema, UserLoginSchema, TokenResponse, UserResponseSchema,
     AccountSchema, AccountResponse, MonitoredPostCreate, MonitoredPostResponse,
@@ -1091,12 +1091,18 @@ def admin_list_users(current_admin: User = Depends(get_current_admin), db: Sessi
         dms_failed = 0
         pending = 0
         if account_ids:
-            dms_sent += db.query(Target).filter(Target.account_id.in_(account_ids), Target.status == "sent").count()
+            sent_query = db.query(Target).filter(Target.account_id.in_(account_ids), Target.status == "sent")
+            if u.cost_reset_at:
+                sent_query = sent_query.filter(Target.sent_at >= u.cost_reset_at)
+            dms_sent += sent_query.count()
             dms_failed += db.query(Target).filter(Target.account_id.in_(account_ids), Target.status == "failed").count()
             pending += db.query(Target).filter(Target.account_id.in_(account_ids), Target.status == "pending").count()
             post_ids = [p.id for p in db.query(MonitoredPost).filter(MonitoredPost.account_id.in_(account_ids)).all()]
             if post_ids:
-                dms_sent += db.query(ProcessedComment).filter(ProcessedComment.post_id.in_(post_ids), ProcessedComment.status == "sent").count()
+                comment_query = db.query(ProcessedComment).filter(ProcessedComment.post_id.in_(post_ids), ProcessedComment.status == "sent")
+                if u.cost_reset_at:
+                    comment_query = comment_query.filter(ProcessedComment.processed_at >= u.cost_reset_at)
+                dms_sent += comment_query.count()
                 dms_failed += db.query(ProcessedComment).filter(ProcessedComment.post_id.in_(post_ids), ProcessedComment.status == "failed").count()
 
         tg_bot_objs = db.query(TgBotConfig).filter(TgBotConfig.user_id == u.id).all()
@@ -1109,10 +1115,13 @@ def admin_list_users(current_admin: User = Depends(get_current_admin), db: Sessi
             tg_channels_count = len(tg_channels)
             if tg_channels:
                 ch_ids = [ch.id for ch in tg_channels]
-                tg_posts_sent = db.query(TgScheduledPost).filter(
+                tg_query = db.query(TgScheduledPost).filter(
                     TgScheduledPost.channel_id.in_(ch_ids),
                     TgScheduledPost.status == "sent"
-                ).count()
+                )
+                if u.cost_reset_at:
+                    tg_query = tg_query.filter(TgScheduledPost.sent_at >= u.cost_reset_at)
+                tg_posts_sent = tg_query.count()
 
         ig_cost = round(dms_sent * 0.45, 2)
         tg_cost = round(tg_posts_sent * 0.27, 2)
@@ -1144,6 +1153,17 @@ def admin_list_users(current_admin: User = Depends(get_current_admin), db: Sessi
             "total_cost": total_cost,
         })
     return result
+
+
+@app.post("/api/admin/users/{user_id}/reset-cost")
+def admin_reset_user_cost(user_id: int, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(404, "User not found")
+    target_user.cost_reset_at = datetime.utcnow()
+    db.commit()
+    log_to_db("WARNING", f"Admin {current_admin.username} reset usage cost for @{target_user.username}")
+    return {"ok": True, "reset_at": target_user.cost_reset_at.isoformat()}
 
 @app.patch("/api/admin/users/{user_id}/toggle-admin")
 def admin_toggle_admin(user_id: int, current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
@@ -1394,9 +1414,12 @@ async def tg_add_channel_manual(
         raise HTTPException(400, f"Cannot access chat: {e}. Make sure the bot is added as admin to the channel/group first.")
 
     real_chat_id = str(chat_info.get("id", chat_id))
-    existing = db.query(TgChannel).filter(TgChannel.bot_id == bot_id, TgChannel.chat_id == real_chat_id).first()
+    existing = db.query(TgChannel).join(TgBotConfig).filter(
+        TgChannel.chat_id == real_chat_id,
+        TgBotConfig.workspace_id == workspace.id,
+    ).first()
     if existing:
-        raise HTTPException(400, "Channel already added")
+        raise HTTPException(409, "This channel or group is already connected in this workspace")
 
     ch = TgChannel(
         chat_id=real_chat_id,
@@ -1409,6 +1432,41 @@ async def tg_add_channel_manual(
     db.commit()
     db.refresh(ch)
     return {"id": ch.id, "chat_id": ch.chat_id, "title": ch.title, "chat_type": ch.chat_type, "member_count": ch.member_count}
+
+
+class TgTemplatePayload(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(..., min_length=1, max_length=4096)
+
+
+@app.get("/api/tg/templates")
+def tg_list_templates(current_user: User = Depends(get_current_user), workspace: Workspace = Depends(get_current_workspace), db: Session = Depends(get_db)):
+    return db.query(TgMessageTemplate).filter(
+        TgMessageTemplate.user_id == current_user.id,
+        TgMessageTemplate.workspace_id == workspace.id,
+    ).order_by(TgMessageTemplate.created_at.desc()).all()
+
+
+@app.post("/api/tg/templates")
+def tg_create_template(payload: TgTemplatePayload, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(require_workspace_role("owner", "admin", "member")), db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if db.query(TgMessageTemplate).filter(TgMessageTemplate.workspace_id == workspace.id, TgMessageTemplate.name == name).first():
+        raise HTTPException(409, "A Telegram template with this name already exists")
+    template = TgMessageTemplate(name=name, content=payload.content.strip(), user_id=current_user.id, workspace_id=workspace.id)
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    return template
+
+
+@app.delete("/api/tg/templates/{template_id}")
+def tg_delete_template(template_id: int, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(require_workspace_role("owner", "admin", "member")), db: Session = Depends(get_db)):
+    template = db.query(TgMessageTemplate).filter(TgMessageTemplate.id == template_id, TgMessageTemplate.user_id == current_user.id, TgMessageTemplate.workspace_id == workspace.id).first()
+    if not template:
+        raise HTTPException(404, "Template not found")
+    db.delete(template)
+    db.commit()
+    return {"ok": True}
 
 
 # ── Telegram File Upload ─────────────────────────────────────────────────────
@@ -1424,7 +1482,7 @@ async def tg_upload_media(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    allowed_ext = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".mp4", ".pdf", ".doc", ".docx", ".zip", ".txt", ".csv"}
+    allowed_ext = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".mp4", ".pdf", ".ppt", ".pptx", ".doc", ".docx", ".zip", ".txt", ".csv"}
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed_ext:
         raise HTTPException(400, f"File type {ext} not allowed")
@@ -1432,13 +1490,18 @@ async def tg_upload_media(
     if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 50MB)")
 
-    unique_name = f"{uuid.uuid4().hex}{ext}"
+    original_name = os.path.basename(file.filename or f"attachment{ext}")
+    safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", original_name).strip(" .") or f"attachment{ext}"
+    safe_name = safe_name[-180:]
+    unique_name = f"{uuid.uuid4().hex}__{safe_name}"
     file_path = os.path.join(UPLOAD_DIR, unique_name)
     content = await file.read()
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(400, "File too large (max 50MB)")
     with open(file_path, "wb") as f:
         f.write(content)
 
-    return {"filename": unique_name, "original_name": file.filename, "size": len(content)}
+    return {"filename": unique_name, "original_name": original_name, "size": len(content)}
 
 @app.get("/api/tg/uploads/{filename}")
 async def tg_get_upload(filename: str):
@@ -1458,6 +1521,10 @@ def tg_schedule_post(req: TgScheduledPostCreate, current_user: User = Depends(ge
     bot = channel.bot
     if bot.user_id != current_user.id or bot.workspace_id != workspace.id:
         raise HTTPException(403, "Not your channel")
+    if not bot.is_active or not channel.is_active:
+        raise HTTPException(400, "Bot or channel is inactive")
+    if not (req.content or "").strip() and not req.media_path:
+        raise HTTPException(400, "Add message text or an attachment")
 
     batch_json = None
     if req.batch_messages:
@@ -1577,45 +1644,29 @@ async def tg_send_now(post_id: int, current_user: User = Depends(get_current_use
 
     channel = post.channel
     bot = channel.bot
+    if not channel.is_active or not bot.is_active:
+        raise HTTPException(400, "Bot or channel is inactive")
+    if post.status not in ("pending", "failed"):
+        raise HTTPException(409, f"Post is already {post.status}")
     try:
-        batch = None
-        if post.batch_messages:
-            try:
-                batch = json.loads(post.batch_messages)
-            except Exception:
-                batch = None
+        claimed = db.query(TgScheduledPost).filter(
+            TgScheduledPost.id == post_id,
+            TgScheduledPost.status.in_(("pending", "failed")),
+        ).update({"status": "processing", "error_message": None}, synchronize_session=False)
+        db.commit()
+        if not claimed:
+            raise HTTPException(409, "Post is already being processed")
+        db.refresh(post)
 
-        if batch and isinstance(batch, list):
-            if post.media_type == "photo" and post.media_path:
-                await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
-            elif post.media_type == "document" and post.media_path:
-                await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
-            else:
-                await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
-
-            for msg in batch:
-                await asyncio.sleep(1)
-                content = msg.get("content", "")
-                m_type = msg.get("media_type")
-                m_path = msg.get("media_path")
-                if m_type == "photo" and m_path:
-                    await telegram_service.send_photo(bot.bot_token, channel.chat_id, m_path, content)
-                elif m_type == "document" and m_path:
-                    await telegram_service.send_document(bot.bot_token, channel.chat_id, m_path, content)
-                else:
-                    await telegram_service.send_message(bot.bot_token, channel.chat_id, content)
-        else:
-            if post.media_type == "photo" and post.media_path:
-                await telegram_service.send_photo(bot.bot_token, channel.chat_id, post.media_path, post.content)
-            elif post.media_type == "document" and post.media_path:
-                await telegram_service.send_document(bot.bot_token, channel.chat_id, post.media_path, post.content)
-            else:
-                await telegram_service.send_message(bot.bot_token, channel.chat_id, post.content)
+        result = await telegram_service.send_post(bot.bot_token, channel.chat_id, post)
 
         post.status = "sent"
         post.sent_at = datetime.utcnow()
+        db.add(TgPostLog(channel_id=channel.id, message_id=str(result.get("message_id", "")), content_preview=(post.content or "")[:200], status="sent"))
         db.commit()
         return {"ok": True, "status": "sent"}
+    except HTTPException:
+        raise
     except Exception as e:
         post.status = "failed"
         post.error_message = str(e)[:500]
@@ -1884,7 +1935,7 @@ async def upload_media(
     db: Session = Depends(get_db),
 ):
     ext = os.path.splitext(file.filename or "file")[1].lower()
-    allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mp3", ".pdf", ".svg"}
+    allowed = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".mp4", ".mp3", ".pdf", ".svg", ".ppt", ".pptx", ".doc", ".docx", ".txt", ".csv"}
     if ext not in allowed:
         raise HTTPException(400, f"File type {ext} not allowed")
 
@@ -1898,7 +1949,7 @@ async def upload_media(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    file_type = "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"} else "video" if ext == ".mp4" else "audio" if ext == ".mp3" else "document"
+    file_type = "image" if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"} else "video" if ext == ".mp4" else "audio" if ext == ".mp3" else "document"
 
     media = MediaFile(
         user_id=current_user.id,
@@ -1943,6 +1994,56 @@ def serve_media_file(media_id: int, current_user: User = Depends(get_current_use
     if not os.path.exists(path):
         raise HTTPException(404, "File missing from disk")
     return FastAPIFileResponse(path, media_type=media.mime_type, filename=media.original_name)
+
+
+@app.get("/api/media/{media_id}/presentation-preview")
+def preview_presentation(media_id: int, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(get_current_workspace), db: Session = Depends(get_db)):
+    """Extract readable slide text from a protected PPTX file."""
+    import re
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    media = db.query(MediaFile).filter(MediaFile.id == media_id, MediaFile.workspace_id == workspace.id).first()
+    if not media:
+        raise HTTPException(404, "File not found")
+    if os.path.splitext(media.filename)[1].lower() != ".pptx":
+        raise HTTPException(400, "Preview is available for PPTX files; legacy PPT files can be downloaded")
+    path = os.path.join(MEDIA_DIR, media.filename)
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = sorted(
+                (name for name in archive.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)),
+                key=lambda name: int(re.search(r"\d+", name).group()),
+            )
+            slides = []
+            for index, name in enumerate(names[:100], 1):
+                root = ET.fromstring(archive.read(name))
+                lines = [node.text for node in root.iter() if node.tag.endswith("}t") and node.text]
+                slides.append({"number": index, "text": lines})
+        return {"name": media.original_name, "slide_count": len(names), "slides": slides}
+    except (zipfile.BadZipFile, ET.ParseError):
+        raise HTTPException(422, "This presentation could not be previewed")
+
+
+@app.post("/api/media/{media_id}/use/telegram")
+def use_media_in_telegram(media_id: int, current_user: User = Depends(get_current_user), workspace: Workspace = Depends(get_current_workspace), db: Session = Depends(get_db)):
+    """Create a Telegram attachment reference from a workspace library file."""
+    import shutil
+
+    media = db.query(MediaFile).filter(MediaFile.id == media_id, MediaFile.workspace_id == workspace.id).first()
+    if not media:
+        raise HTTPException(404, "File not found")
+    source = os.path.join(MEDIA_DIR, media.filename)
+    if not os.path.exists(source):
+        raise HTTPException(404, "File missing from disk")
+    ext = os.path.splitext(media.filename)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".mp4", ".pdf", ".svg", ".mp3", ".ppt", ".pptx", ".doc", ".docx", ".txt", ".csv"}:
+        raise HTTPException(400, "This file type cannot be used in Telegram")
+    safe_original = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", os.path.basename(media.original_name)).strip(" .") or f"attachment{ext}"
+    safe_original = safe_original[-180:]
+    telegram_name = f"library_{media.id}_{secrets.token_hex(4)}__{safe_original}"
+    shutil.copy2(source, os.path.join(UPLOAD_DIR, telegram_name))
+    return {"filename": telegram_name, "original_name": media.original_name, "file_type": media.file_type}
 
 
 @app.delete("/api/media/{media_id}")
@@ -2153,24 +2254,38 @@ def admin_delete_feature_flag(
 @app.get("/api/admin/health")
 def admin_system_health(current_admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
     import platform as plat
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
 
-    disk = psutil.disk_usage("/") if hasattr(psutil, "disk_usage") else None
-    mem = psutil.virtual_memory() if hasattr(psutil, "virtual_memory") else None
+    disk = mem = None
+    cpu_percent = None
+    if psutil:
+        try:
+            disk_root = os.path.abspath(os.sep)
+            disk = psutil.disk_usage(disk_root)
+        except (OSError, PermissionError):
+            disk = None
+        try:
+            mem = psutil.virtual_memory()
+            cpu_percent = psutil.cpu_percent(interval=None)
+        except (OSError, PermissionError):
+            mem = None
 
     db_size = None
-    db_path = os.path.join(os.path.dirname(__file__), "bot.db")
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "insta_automate.db"))
     if os.path.exists(db_path):
         db_size = os.path.getsize(db_path)
 
     return {
         "platform": plat.system(),
         "python_version": plat.python_version(),
-        "cpu_percent": psutil.cpu_percent(interval=0.5) if hasattr(psutil, "cpu_percent") else None,
+        "cpu_percent": cpu_percent,
         "memory": {"total": mem.total, "used": mem.used, "percent": mem.percent} if mem else None,
         "disk": {"total": disk.total, "used": disk.used, "percent": disk.percent} if disk else None,
         "db_size_bytes": db_size,
-        "ig_bot_running": getattr(bot_module, "bot_running", False),
+        "ig_bot_running": getattr(bot_module, "BOT_RUNNING", False),
         "tg_service_running": telegram_service.is_running,
         "uptime_seconds": int(time.time() - app.state.start_time) if hasattr(app.state, "start_time") else None,
     }

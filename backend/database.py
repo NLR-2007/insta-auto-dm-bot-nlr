@@ -45,6 +45,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_enabled = Column(Boolean, default=True)
     automation_active = Column(Boolean, default=False)
+    cost_reset_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
@@ -263,6 +264,17 @@ class TgChannel(Base):
     moderation_rules = relationship("TgModerationRule", back_populates="channel", cascade="all, delete-orphan")
 
 
+class TgMessageTemplate(Base):
+    __tablename__ = "tg_message_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    content = Column(Text, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class TgScheduledPost(Base):
     __tablename__ = "tg_scheduled_posts"
 
@@ -434,6 +446,7 @@ def ensure_saas_columns():
     targets = [
         ("users", "is_enabled"),
         ("users", "automation_active"),
+        ("users", "cost_reset_at"),
         ("accounts", "workspace_id"),
         ("message_templates", "workspace_id"),
         ("opt_outs", "workspace_id"),
@@ -453,6 +466,10 @@ def ensure_saas_columns():
                     columns = _table_columns(conn, table_name)
                     if column_name not in columns:
                         conn.execute(text("ALTER TABLE users ADD COLUMN automation_active BOOLEAN DEFAULT 0"))
+                elif table_name == "users" and column_name == "cost_reset_at":
+                    columns = _table_columns(conn, table_name)
+                    if column_name not in columns:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN cost_reset_at DATETIME"))
                 elif table_name == "tg_bot_configs" and column_name == "bot_token_hash":
                     columns = _table_columns(conn, table_name)
                     if column_name not in columns:

@@ -674,8 +674,18 @@ def run_login_worker(username: str):
         loop.close()
 
 @app.post("/api/accounts/{username}/login")
-def trigger_manual_login(username: str, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    account = db.query(Account).filter(Account.username == username, Account.user_id == current_user.id).first()
+def trigger_manual_login(
+    username: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    account = db.query(Account).filter(
+        Account.username == username,
+        Account.user_id == current_user.id,
+        Account.workspace_id == workspace.id,
+    ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
     account.status = "connecting"
@@ -683,35 +693,62 @@ def trigger_manual_login(username: str, background_tasks: BackgroundTasks, curre
     background_tasks.add_task(run_login_worker, username)
     return {"message": "Visible browser window launched on host. Please log in manually."}
 
-@app.post("/api/accounts/{username}/mark-connected")
-def force_mark_connected(username: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    account = db.query(Account).filter(Account.username == username, Account.user_id == current_user.id).first()
+@app.post("/api/accounts/{username}/mark-connected", deprecated=True)
+@app.post("/api/accounts/{username}/verify")
+def verify_account_session(
+    username: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    workspace: Workspace = Depends(get_current_workspace),
+    db: Session = Depends(get_db),
+):
+    account = db.query(Account).filter(
+        Account.username == username,
+        Account.user_id == current_user.id,
+        Account.workspace_id == workspace.id,
+    ).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found.")
-    account.status = "connected"
-    db.commit()
-    return {"message": f"Account @{username} manually set to 'connected'."}
 
-def run_verification_worker(username: str, proxy_config: Optional[dict] = None):
+    proxy_config = None
+    if account.proxy_host and account.proxy_port:
+        proxy_config = {"server": f"http://{account.proxy_host}:{account.proxy_port}"}
+        if account.proxy_username and account.proxy_password:
+            proxy_config["username"] = account.proxy_username
+            proxy_config["password"] = decrypt_secret(account.proxy_password)
+
+    account.status = "connecting"
+    db.commit()
+    background_tasks.add_task(run_verification_worker, account.id, username, proxy_config)
+    return {"status": "connecting", "message": f"Session verification started for @{username}."}
+
+def run_verification_worker(account_id: int, username: str, proxy_config: Optional[dict] = None):
     bot = InstagramBot(username, proxy=proxy_config)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    is_logged = False
     try:
         loop.run_until_complete(bot.init_browser(headless=True))
-        is_logged = loop.run_until_complete(bot.check_login_status())
-        loop.run_until_complete(bot.close_browser())
-        
+        is_logged = bool(loop.run_until_complete(bot.check_login_status()))
+    except Exception as e:
+        log_to_db("ERROR", f"Instagram session verification failed for @{username}: {e}")
+    finally:
+        try:
+            loop.run_until_complete(bot.close_browser())
+        except Exception as close_error:
+            log_to_db("WARNING", f"Could not close verification browser for @{username}: {close_error}")
+
         db = SessionLocal()
         try:
-            account = db.query(Account).filter(Account.username == username).first()
+            account = db.query(Account).filter(Account.id == account_id).first()
             if account:
                 account.status = "connected" if is_logged else "verification_needed"
                 db.commit()
+                level = "SUCCESS" if is_logged else "WARNING"
+                result = "verified" if is_logged else "not authenticated"
+                log_to_db(level, f"Instagram session for @{username} is {result}.")
         finally:
             db.close()
-    except Exception as e:
-        log_to_db("ERROR", f"Manual verification session failed: {e}")
-    finally:
         loop.close()
 
 @app.post("/api/accounts/{username}/session")
@@ -753,7 +790,7 @@ async def save_session_cookies(
             proxy_config["username"] = account.proxy_username
             proxy_config["password"] = decrypt_secret(account.proxy_password)
 
-    background_tasks.add_task(run_verification_worker, username, proxy_config)
+    background_tasks.add_task(run_verification_worker, account.id, username, proxy_config)
     return {"status": "connecting", "message": "Cookies imported successfully. Triggering validation..."}
 
 def normalize_cookies_to_storage_state(cookie_data) -> dict:

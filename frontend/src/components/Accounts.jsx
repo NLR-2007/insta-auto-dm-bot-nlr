@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { Shield, ShieldAlert, Plus, Trash2, Key, HelpCircle, Check, Loader2 } from "lucide-react";
+import { Shield, ShieldAlert, Plus, Trash2, Key, Check, Loader2 } from "lucide-react";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState([]);
@@ -81,12 +81,13 @@ export default function Accounts() {
     reader.readAsText(file);
   };
 
-  const handleForceConnected = async (username) => {
+  const handleVerifySession = async (username) => {
     try {
-      await apiFetch(`/api/accounts/${username}/mark-connected`, { method: "POST" });
+      await apiFetch(`/api/accounts/${username}/verify`, { method: "POST" });
+      alert(`Session verification started for @${username}. The status will update automatically.`);
       fetchAccounts();
     } catch (e) {
-      alert(e.message || "Failed to force connection status.");
+      alert(e.message || "Failed to verify the Instagram session.");
     }
   };
 
@@ -131,7 +132,7 @@ export default function Accounts() {
                     <div style={{ display: "flex", gap: "10px", marginTop: "6px", alignItems: "center" }}>
                       {acc.status === "connected" && (
                         <span className="badge badge-sent">
-                          <Check size={12} style={{ marginRight: "4px" }} /> Connected / Session Active
+                          <Check size={12} style={{ marginRight: "4px" }} /> Verified / Session Active
                         </span>
                       )}
                       {acc.status === "connecting" && (
@@ -193,13 +194,14 @@ export default function Accounts() {
                         </button>
                       </>
                     )}
-                    {acc.status === "connecting" && (
+                    {acc.status !== "connecting" && (
                       <button
                         className="btn btn-secondary"
                         style={{ padding: "8px 12px", fontSize: "12px" }}
-                        onClick={() => handleForceConnected(acc.username)}
+                        onClick={() => handleVerifySession(acc.username)}
+                        disabled={loading}
                       >
-                        Force Verify
+                        Verify Session
                       </button>
                     )}
                     <button

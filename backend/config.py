@@ -5,6 +5,9 @@ from pydantic import Field
 class Settings(BaseSettings):
     ENVIRONMENT: str = Field(default="development")
     FRONTEND_ORIGINS: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
+    # Vercel creates a different hostname for preview deployments. Keep the
+    # regex narrow so arbitrary origins are not granted credentialed access.
+    FRONTEND_ORIGIN_REGEX: str = Field(default=r"^https://(?:lyvoranlr|insta-auto-dm-bot-nlr)(?:-[a-z0-9-]+)?\.vercel\.app$")
 
     # Database configuration
     # Can be mysql+mysqlconnector://user:pass@host:port/dbname
@@ -41,10 +44,14 @@ def is_production() -> bool:
     return settings.ENVIRONMENT.lower() in {"prod", "production"}
 
 def cors_origins() -> list[str]:
-    origins = [origin.strip() for origin in settings.FRONTEND_ORIGINS.split(",") if origin.strip()]
+    origins = [origin.strip().rstrip("/") for origin in settings.FRONTEND_ORIGINS.split(",") if origin.strip()]
     if not origins and not is_production():
         return ["http://localhost:5173", "http://127.0.0.1:5173"]
     return origins
+
+def cors_origin_regex() -> str | None:
+    value = settings.FRONTEND_ORIGIN_REGEX.strip()
+    return value or None
 
 def validate_runtime_config() -> None:
     weak_secret = settings.API_SECRET_KEY in {"", "insta-dm-secret-key-12345"}

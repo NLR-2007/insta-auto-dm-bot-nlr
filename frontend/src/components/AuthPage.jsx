@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Lock, User, AtSign, ArrowRight, Loader, Eye, EyeOff, Send, BarChart3, Shield, MessageSquare, Mail, Sparkles, CheckCircle2 } from "lucide-react";
+import { Lock, User, AtSign, ArrowRight, ArrowLeft, Loader, Eye, EyeOff, Send, BarChart3, Shield, MessageSquare, Mail, Sparkles, CheckCircle2 } from "lucide-react";
 import { apiLogin, apiRegister } from "../api";
 
 export default function AuthPage({ onAuthSuccess, onBackToHome }) {
@@ -61,8 +61,9 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
 
   return (
     <div className="auth-page">
+      <div className="auth-shell">
       {/* Left: Hero branding panel */}
-      <div className="auth-hero">
+      <section className="auth-hero">
         <div className="auth-hero-content">
           <div className="auth-hero-logo">
             <div className="auth-hero-icon">
@@ -72,7 +73,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
           </div>
 
           <div className="auth-hero-kicker"><Sparkles size={13}/> One workspace. Two powerful channels.</div>
-          <h2 className="auth-hero-heading">Turn conversations into meaningful growth.</h2>
+          <h2 className="auth-hero-heading">Turn conversations into <em>meaningful growth.</em></h2>
           <p className="auth-hero-subtitle">Manage Instagram outreach and Telegram communities from one focused, reliable workspace.</p>
 
           <div className="auth-features">
@@ -96,10 +97,10 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
             <p className="auth-hero-company">NLR GROUP OF COMPANIES</p>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Right: Auth form */}
-      <div className="auth-form-side">
+      <aside className="auth-form-side">
         <div className="auth-card">
           <div className="auth-card-header">
             {onBackToHome && (
@@ -114,7 +115,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
                   fontFamily: "inherit", fontWeight: 500, transition: "color 0.2s"
                 }}
               >
-                ← Back to Home
+                <ArrowLeft size={15} /> Back to Home
               </button>
             )}
             <h2 className="auth-card-title">
@@ -158,7 +159,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
 
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="auth-field">
-              <label className="auth-label">Username</label>
+              <label className="auth-label" htmlFor="auth-username">Username</label>
               <div className="auth-input-wrap">
                 <User size={15} className="auth-input-icon" />
                 <input
@@ -177,7 +178,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
 
             {mode === "register" && (
               <div className="auth-field">
-                <label className="auth-label">Email</label>
+                <label className="auth-label" htmlFor="auth-email">Email</label>
                 <div className="auth-input-wrap">
                   <AtSign size={15} className="auth-input-icon" />
                   <input
@@ -196,7 +197,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
             )}
 
             <div className="auth-field">
-              <label className="auth-label">Password</label>
+              <label className="auth-label" htmlFor="auth-password">Password</label>
               <div className="auth-input-wrap">
                 <Lock size={15} className="auth-input-icon" />
                 <input
@@ -257,6 +258,7 @@ export default function AuthPage({ onAuthSuccess, onBackToHome }) {
             Developed by <strong>NLR GROUP OF COMPANIES</strong>
           </p>
         </div>
+      </aside>
       </div>
     </div>
   );

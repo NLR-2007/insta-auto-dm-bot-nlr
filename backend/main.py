@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.config import cors_origins, validate_runtime_config
+from backend.config import cors_origins, cors_origin_regex, validate_runtime_config
 from backend.database import get_db, init_db, Account, Target, MessageTemplate, BotLog, Setting, log_to_db, SessionLocal, MonitoredPost, ProcessedComment, OptOut, User, TgBotConfig, TgChannel, TgMessageTemplate, TgScheduledPost, TgModerationRule, TgPostLog, Workspace, WorkspaceMember, Subscription, Campaign, AutomationRunner, AuditLog, Notification, MediaFile, Contact, FeatureFlag
 from backend.schemas import (
     UserRegisterSchema, UserLoginSchema, TokenResponse, UserResponseSchema,
@@ -70,6 +70,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins(),
+    allow_origin_regex=cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

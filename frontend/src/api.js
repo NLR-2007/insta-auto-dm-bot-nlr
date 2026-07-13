@@ -10,7 +10,10 @@ if (typeof window !== "undefined") {
   }
 }
 
-export let BASE_URL = (typeof window !== "undefined" && localStorage.getItem("gg_api_url") || import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const DEFAULT_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const savedApiUrl = typeof window !== "undefined" ? localStorage.getItem("gg_api_url") : null;
+
+export let BASE_URL = (savedApiUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
 
 export const getApiUrl = () => BASE_URL;
 
@@ -20,7 +23,7 @@ export const setApiUrl = (url) => {
     BASE_URL = url.replace(/\/$/, "");
   } else {
     localStorage.removeItem("gg_api_url");
-    BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
+    BASE_URL = DEFAULT_BASE_URL;
   }
 };
 
@@ -47,7 +50,6 @@ export const logout = () => {
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 export const apiFetch = async (endpoint, options = {}) => {
-  const url = `${BASE_URL}${endpoint}`;
   const token = getToken();
 
   const headers = {
@@ -57,10 +59,41 @@ export const apiFetch = async (endpoint, options = {}) => {
     ...options.headers,
   };
 
-  const response = await fetch(url, {
+  const request = (baseUrl) => fetch(`${baseUrl}${endpoint}`, {
     ...options,
     headers,
   });
+
+  const attemptedBaseUrl = BASE_URL;
+  let response;
+  try {
+    response = await request(attemptedBaseUrl);
+  } catch {
+    // ngrok free URLs commonly change. If a saved override is dead, retry the
+    // configured URL and forget the stale override as soon as it responds.
+    if (attemptedBaseUrl !== DEFAULT_BASE_URL) {
+      try {
+        response = await request(DEFAULT_BASE_URL);
+        setApiUrl(null);
+      } catch {
+        throw new Error(`Cannot reach the backend at ${attemptedBaseUrl}. Check the API URL and make sure the backend and ngrok are running.`);
+      }
+    } else {
+      throw new Error(`Cannot reach the backend at ${attemptedBaseUrl}. Make sure the backend is running.`);
+    }
+  }
+
+  // A dead tunnel can still return a gateway response. Treat it like a stale
+  // saved URL when the configured backend is available.
+  if ([502, 503, 504].includes(response.status) && attemptedBaseUrl !== DEFAULT_BASE_URL) {
+    try {
+      response = await request(DEFAULT_BASE_URL);
+      setApiUrl(null);
+    } catch {
+      // Preserve the original gateway response so the normal error handling
+      // below reports its status.
+    }
+  }
 
   // Auto-logout on expired/invalid token
   if (response.status === 401) {
@@ -75,7 +108,7 @@ export const apiFetch = async (endpoint, options = {}) => {
       if (data && data.detail) {
         errMsg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
       }
-    } catch (_) {}
+    } catch {}
     throw new Error(errMsg);
   }
 
